@@ -5,7 +5,7 @@ SUBSET ?= 1000
 BATCH ?= 64
 STEP ?= 2
 
-.PHONY: help setup test phase0 cache-oracle oracle-budget oracle sweep sweep-dense report m-ladder tta pad-ablation clean-results
+.PHONY: help setup test phase0 cache-oracle oracle-budget oracle sweep sweep-dense report fft cache-benefit m-ladder tta pad-ablation clean-results
 
 help:
 	@grep -E '^[a-z0-9-]+:.*?##' $(MAKEFILE_LIST) | sed 's/:.*##/\t/' | column -t -s "$$(printf '\t')"
@@ -69,3 +69,13 @@ pad-ablation:     ## padding-value ablation (Kayhan & van Gemert: padding is a p
 	  python scripts/05_sweep.py --model $(MODEL) --head $(HEAD) --subset $(SUBSET) --step $(STEP) \
 	    --pad-value $$P --device $(DEVICE) --batch $(BATCH); \
 	done
+
+fft:              ## 1-D sweep at 1-px resolution + FFT grid-locking test + head-gap gate
+	python scripts/10_sweep1d_fft.py --model $(MODEL) --head e2e --subset $(SUBSET) \
+		--device $(DEVICE) --batch $(BATCH)
+	python scripts/10_sweep1d_fft.py --model $(MODEL) --head nms --subset $(SUBSET) \
+		--device $(DEVICE) --batch $(BATCH)
+	python scripts/11_head_gap.py --model $(MODEL) --subset $(SUBSET)
+
+cache-benefit:    ## measure what the preprocessing cache is worth on this machine
+	python scripts/09_cache_benefit.py --device $(DEVICE) --batch $(BATCH)

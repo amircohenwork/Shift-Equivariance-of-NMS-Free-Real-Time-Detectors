@@ -112,7 +112,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="yolo26n")
     ap.add_argument("--dir", default="results/sweep1d")
-    ap.add_argument("--subset", type=int, default=1000)
+    ap.add_argument("--subset", default="1000",
+                    help='image-count tag in the run id: an integer, or "full" for all 5000')
     ap.add_argument("--max-shift", type=int, default=63)
     ap.add_argument("--pad-value", type=int, default=114)
     ap.add_argument("--permutations", type=int, default=20000)
@@ -123,10 +124,18 @@ def main():
     setup_logging()
     d = Path(args.dir)
     data = {}
+    sub = "full" if str(args.subset).lower() in ("full", "none", "all") else f"n{args.subset}"
     for head in ("e2e", "nms"):
-        f = d / f"{args.model}_{head}_m{args.max_shift}s1_n{args.subset}_pad{args.pad_value}_fft.json"
+        f = d / f"{args.model}_{head}_m{args.max_shift}s1_{sub}_pad{args.pad_value}_fft.json"
         if not f.exists():
-            raise SystemExit(f"missing {f}; run scripts/10_sweep1d_fft.py --head {head} first")
+            # be forgiving about the subset tag rather than making the caller guess it
+            cands = sorted(d.glob(f"{args.model}_{head}_m{args.max_shift}s1_*_pad{args.pad_value}_fft.json"))
+            if not cands:
+                raise SystemExit(
+                    f"missing {f}; run scripts/10_sweep1d_fft.py --head {head} first"
+                )
+            f = cands[-1]
+            LOGGER.warning(f"{sub} not found for {head}; using {f.name}")
         data[head] = read_json(f)
 
     report: dict = {"model": args.model, "n_images": data["e2e"]["n_images"],

@@ -25,12 +25,18 @@ detectors performed one-to-one NMS-free matching — such detectors did not yet 
 They are now standard (YOLOv10, YOLO26) and their shift equivariance is unmeasured. This
 repo is the first shift-equivariance study of one-to-one NMS-free detectors.
 
-**Headline finding.** On one yolo26n checkpoint, full COCO val, one-pixel shifts: the
-NMS-free head is **16% less shift-equivariant** (ΔAP 3.76 vs 3.25), and its instability is
-concentrated in *whether an object is reported* rather than *where* — 46.5% dropout vs
-28.8%, and **80% of small objects** detected at δ=(0,0) vanish at some shift, while box
-jitter is if anything slightly lower. It can recover +0.86 AP from its own shift variance
-via test-time augmentation, but only by putting NMS back.
+**Headline findings.** On one yolo26n checkpoint, full COCO val, one-pixel shifts:
+
+1. **The NMS-free head is 16% less shift-equivariant** (ΔAP 3.76 vs 3.25), and its
+   instability is concentrated in *whether an object is reported* rather than *where* —
+   46.5% dropout vs 28.8%, and **80% of small objects** detected at δ=(0,0) vanish at some
+   shift, while box jitter is if anything slightly lower.
+2. **The instability is grid-locked, not noise.** A 1-px-resolution sweep over two full
+   strides puts 35–78% of spectral power on the network's downsampling periods (2/4/8/16/32)
+   against 16% expected by chance — 19 of 20 curves, permutation-tested. **Even shifts
+   outscore odd shifts** by up to +0.34 AP: the stride-2 stem's aliasing signature.
+3. **The NMS-free head cannot exploit its own variance.** Shift-TTA recovers +0.86 AP, but
+   only by putting NMS back; the merge that stays NMS-free loses 26 AP.
 
 Full numbers in [Results](#results). No training is involved: everything is inference on
 public pretrained checkpoints.
@@ -55,7 +61,7 @@ python3 -m venv venv && . venv/bin/activate
 pip install -r requirements.txt
 
 make setup     # COCO val2017 images + labels + instances_val2017.json (~2.5 GB)
-make test      # 62 unit tests -- no GPU, no dataset, no weights needed, ~5 s
+make test      # 72 unit tests -- no GPU, no dataset, no weights needed, ~5 s
 ```
 
 Point Ultralytics at the dataset once (the setup script prints the exact command):
@@ -74,6 +80,7 @@ make sweep         # uniform-shift curve AP(delta) + flicker/jitter/SI  (~30 min
 make sweep-dense   # step-1 control that validates the step-2 shortcut  (~5 min)
 make tta           # shift test-time augmentation                       (~7 min)
 make report        # tables (results/REPORT.md) + figures
+make fft           # 1-D sweep at 1-px resolution, spectral test, head-gap gate (~15 min)
 ```
 
 Total ≈ 1.5 GPU-hours for the full set. Useful knobs: `MODEL=`, `HEAD=`, `SUBSET=`,
@@ -128,6 +135,9 @@ python scripts/03_build_cache.py --model yolo11n  --head nms --max-shift 1 --ste
 | `06_report.py` | tables and figures |
 | `07_shift_tta.py` | shift test-time augmentation, three merge strategies |
 | `08_numerics_control.py` | instance-metric noise floor |
+| `09_cache_benefit.py` | what the preprocessing cache is worth (measured: 1.01×) |
+| `10_sweep1d_fft.py` | 1-D sweep at 1-px resolution + spectral test for grid-locking |
+| `11_head_gap.py` | the gate: grid-locked? measurable head gap? + FFT figure |
 
 ---
 
@@ -178,9 +188,11 @@ the same model at the same M. That gap is not a discrepancy — it is the whole 
 two families are reported separately. The oracle picks a shift per image and exploits
 variation that is uncorrelated across images; a uniform shift cannot.
 
-The AP(δ) heatmap (`results/figures/`) is close to spatially uncorrelated rather than
-stride-periodic, consistent with that reading: the response to a translation is largely
-image-specific, not a clean function of sub-stride phase.
+~~The AP(δ) heatmap is close to spatially uncorrelated rather than stride-periodic.~~
+**Retracted.** That was read off a step-2 heatmap by eye, and the spectral test in §6
+refutes it: the response is grid-locked in 19 of 20 curves. The claim is left visible here
+rather than deleted, because it is a good illustration of why a coarse grid and an eyeball
+are not an instrument.
 
 ### 3. Instance-level instability (τ = 0.25), with its control
 
@@ -228,7 +240,81 @@ its shift variance into +0.86 AP — nearly twice what the one-to-many head gain
 with it having more variance to exploit — but only by reintroducing NMS. The deployment
 argument for the NMS-free head does not survive contact with shift-TTA.
 
-### 5. The step-2 shortcut is conservative, not exact
+### 6. Is the instability grid-locked, or is it noise? (FFT)
+
+This is the mechanistic question. If shift-variance comes from strided downsampling
+violating the sampling theorem (Zhang, ICML'19), AP(δ) should be **periodic in the
+stride** — translating by exactly one stride returns every feature-map cell to the same
+sub-cell phase. If instead the response is image-specific chaos, the spectrum is broadband.
+The two imply different mitigations: anti-aliasing helps the first and not the second.
+
+The step-2 2-D grid is too coarse to decide this, so `10_sweep1d_fft.py` sweeps a **1-D
+line at full 1-px resolution over two complete strides** (δ ∈ [0, 63], 64 points). With 64
+samples the FFT bins land exactly on the periods of interest — period 32 is bin 2, 16 is
+bin 4, 8 is bin 8 — so a stride-locked response puts power in a single bin with no leakage.
+
+**Result: 19 of 20 curves are grid-locked** (2 heads × 2 axes × 5 size buckets).
+
+| | e2e | nms |
+|---|---|---|
+| curves grid-locked | 10/10 | 9/10 |
+| stride power (sum over periods 2/4/8/16/32) | 0.35 – 0.71 | 0.40 – 0.78 |
+| enrichment over chance (16%) | 2.3× – 4.6× | 2.5× – 5.0× |
+| peak period, overall AP | 2 px (x), 8 px (y) | 2 px (x), 8 px (y) |
+| best family-wise p | 0.0006 | 0.0000 |
+
+Peak periods land on network strides almost every time. Significance is a **permutation
+null over δ** — shuffling destroys the ordering while preserving the marginal AP
+distribution, so it controls for the finite-image-sample noise floor rather than assuming
+it away.
+
+**Parity effect.** The interpretable form of the period-2 peak: **even shifts outscore odd
+shifts**, by +0.187 AP for e2e overall (p = 0.0006), +0.262 on large objects (p = 0.0015),
+and +0.342 on small objects along y (p = 0.010). That is the stride-2 stem's aliasing
+signature — shifting by an odd number of pixels lands the whole cascade on the wrong
+sub-sampling phase.
+
+Two mistakes in the first version of this analysis, both fixed, both worth knowing:
+
+* the stride set was `(8, 16, 32)` — the *detection* strides. But aliasing enters at every
+  downsampling step and the stem is stride-2, so the dominant period-2 peak was scored as
+  "broadband": the headline exactly backwards. `NETWORK_STRIDES` is now the full cascade.
+* the peak p-value was a **selected maximum** over 32 bins, reported without correction.
+  Added a max-statistic permutation null; on pure noise the corrected p ranges 0.08–0.99
+  where the uncorrected one produced false positives.
+
+![FFT head comparison](results/figures/fft_head_comparison.png)
+
+### 7. The gate — is there a measurable, consistent gap between the heads?
+
+**Yes in the metrics that preserve per-image variation; not established by the uniform-shift
+curve alone.** That distinction is structural, not a contradiction.
+
+| instrument | N | verdict |
+|---|---|---|
+| oracle ΔAP | 5000 | **clear** — 3.76 vs 3.25, ΔAP50 6.96 vs 6.08 |
+| flicker / dropout / SI | 1000 | **clear** — 39.2 vs 30.2%, 46.5 vs 28.8%, 0.576 vs 0.616 |
+| uniform AP(δ) curve, paired across δ | 1000 | **mixed** — e2e worse on 3/10 curves, nms on 2/10, 5 n.s. |
+
+The uniform-shift curve averages AP over 1000 images, which cancels exactly the per-image
+variation that the oracle envelope and the per-object metrics accumulate. It is therefore
+the *least* powerful of the three instruments, and 5 of its 10 curves being
+non-significant is what low power looks like, not evidence of no effect.
+
+Where the curve *is* significant it agrees with the other two (e2e worse on overall AP and
+AP50 along y, and AP50 along x). Where it reverses — medium objects along x, large objects
+along y — the size-conditional ranges are within noise of each other in the 2-D sweep too.
+
+`11_head_gap.py` runs the paired test: both heads saw the same images at the same δ, so
+per-δ absolute deviations from each head's own mean are compared under a sign-flip null.
+That controls for deltas that are simply hard for both heads, which an unpaired comparison
+would miscount as signal.
+
+> **Caveat, stated plainly:** these numbers are N = 1000. A full-validation-set (N = 5000)
+> 1-D sweep is the fair test of whether the five non-significant curves are a real null or
+> just underpowered, and it is the single most useful next run.
+
+### 8. The step-2 shortcut is conservative, not exact
 
 The proposal promises a validation of the coarse grid against a dense one. On 100 images
 at step 1 (1024 shifts), AP range = 4.041; subsampled to step 2 it reads 3.297, to step 4,
@@ -487,8 +573,9 @@ shifteq/
   stabindex.py  2-D Stability Index (confidence / location / extent decomposition)
   tta.py        shift test-time augmentation, three merge strategies
   pipeline.py   worker pool: GPU inference for δ_{k+1} overlaps CPU eval of δ_k
-scripts/        00 setup .. 08 numerics control
-tests/          62 tests; run on a laptop with no GPU, dataset, or weights
+  spectrum.py   power spectrum of AP(δ), permutation nulls, parity statistic
+scripts/        00 setup .. 11 head gap
+tests/          72 tests; run on a laptop with no GPU, dataset, or weights
 PROTOCOL.md     the frozen pre-registration -- read this first
 results/        committed outputs of the runs reported above
 ```
