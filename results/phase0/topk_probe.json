@@ -1,0 +1,31 @@
+{
+  "disagreement": {
+    "frac_different": 0.0,
+    "images": 64,
+    "images_with_different_selection": 0,
+    "max_score_delta": 0.0
+  },
+  "exact_minus_grouped_AP": 0.0,
+  "exact_topk": {
+    "mAP50": 55.80860943994538,
+    "mAP50-95": 40.25463678211052,
+    "mAP75": 43.59612721084994,
+    "mAP_large": 58.353347202383155,
+    "mAP_medium": 44.22017666748342,
+    "mAP_small": 19.725564845892148
+  },
+  "grouped_topk_engine": {
+    "mAP50": 55.80860943994538,
+    "mAP50-95": 40.25463678211052,
+    "mAP75": 43.59612721084994,
+    "mAP_large": 58.353347202383155,
+    "mAP_medium": 44.22017666748342,
+    "mAP_small": 19.725564845892148
+  },
+  "model": "yolo26n",
+  "published": {
+    "e2e": 40.1,
+    "nms": 40.9
+  },
+  "published_e2e": 40.1
+}

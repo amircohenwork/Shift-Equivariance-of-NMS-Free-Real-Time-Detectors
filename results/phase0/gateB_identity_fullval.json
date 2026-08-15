@@ -1,0 +1,42 @@
+{
+  "failures": [
+    "e2e: ours 40.220 vs Ultralytics square 40.255, delta -0.034 > tol 0.02",
+    "nms: ours 40.834 vs Ultralytics square 40.867, delta -0.033 > tol 0.02"
+  ],
+  "gate_pass": false,
+  "heads": {
+    "e2e": {
+      "canvas": 640,
+      "delta": -0.034469812116512344,
+      "n_dets": 732405,
+      "n_images": 5000,
+      "ours": {
+        "AP": 40.22016696999401,
+        "AP50": 55.795351740444424,
+        "AP_large": 58.29884211377704,
+        "AP_medium": 44.19768826211247,
+        "AP_small": 19.71868330147433
+      },
+      "pass": false,
+      "run_id": "yolo26n_e2e_m0s1_full_pad114",
+      "ultralytics_square_baseline": 40.25463678211052
+    },
+    "nms": {
+      "canvas": 640,
+      "delta": -0.033458291324379275,
+      "n_dets": 747359,
+      "n_images": 5000,
+      "ours": {
+        "AP": 40.83357108453876,
+        "AP50": 56.83638830200696,
+        "AP_large": 59.27576669695001,
+        "AP_medium": 44.946206229954186,
+        "AP_small": 20.68199941153522
+      },
+      "pass": false,
+      "run_id": "yolo26n_nms_m0s1_full_pad114",
+      "ultralytics_square_baseline": 40.86702937586314
+    }
+  },
+  "tol": 0.02
+}

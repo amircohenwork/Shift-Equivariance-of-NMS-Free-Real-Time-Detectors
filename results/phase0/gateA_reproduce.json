@@ -1,0 +1,94 @@
+{
+  "data": "coco.yaml",
+  "failures": [],
+  "fuse_probe": {
+    "fuse_destroys_one2many": true,
+    "one2many_after_fuse": false,
+    "one2many_before_fuse": true
+  },
+  "gate_pass": true,
+  "gate_rect": true,
+  "harness_baseline": {
+    "e2e": {
+      "mAP50": 55.80860943994538,
+      "mAP50-95": 40.25463678211052,
+      "mAP75": 43.59612721084994,
+      "mAP_large": 58.353347202383155,
+      "mAP_medium": 44.22017666748342,
+      "mAP_small": 19.725564845892148,
+      "minus_gate_protocol": 0.21074271276044954
+    },
+    "nms": {
+      "mAP50": 56.84242115357277,
+      "mAP50-95": 40.86702937586314,
+      "mAP75": 44.167019122569215,
+      "mAP_large": 59.3265596845069,
+      "mAP_medium": 44.95667035508708,
+      "mAP_small": 20.686589682682595,
+      "minus_gate_protocol": 0.053904603815666974
+    }
+  },
+  "head_gap_ours": 0.7692307026973992,
+  "head_gap_published": 0.7999999999999972,
+  "heads": {
+    "e2e": {
+      "coco": {
+        "mAP50": 55.68375427470515,
+        "mAP50-95": 40.043894069350074,
+        "mAP75": 43.427578764627455,
+        "mAP_large": 58.064849471569744,
+        "mAP_medium": 44.039190095812344,
+        "mAP_small": 19.710668782021706
+      },
+      "conf": 0.001,
+      "delta": -0.056105930649927416,
+      "iou": 0.7,
+      "mAP50-95": 40.043894069350074,
+      "max_det": 300,
+      "pass": true,
+      "published": 40.1,
+      "quantize": null,
+      "rect": true,
+      "save_dir": "/home/student/runs/detect/val-27",
+      "ultralytics_internal": {
+        "mAP50": 55.02429824411823,
+        "mAP50-95": 39.49512401905446
+      }
+    },
+    "nms": {
+      "coco": {
+        "mAP50": 56.863937633928295,
+        "mAP50-95": 40.81312477204747,
+        "mAP75": 44.2669516887902,
+        "mAP_large": 58.901609186978156,
+        "mAP_medium": 44.84172141206849,
+        "mAP_small": 21.219254339885442
+      },
+      "conf": 0.001,
+      "delta": -0.08687522795252534,
+      "iou": 0.7,
+      "mAP50-95": 40.81312477204747,
+      "max_det": 300,
+      "pass": true,
+      "published": 40.9,
+      "quantize": null,
+      "rect": true,
+      "save_dir": "/home/student/runs/detect/val-29",
+      "ultralytics_internal": {
+        "mAP50": 56.201659677561544,
+        "mAP50-95": 40.24058472640486
+      }
+    }
+  },
+  "imgsz": 640,
+  "model": "yolo26n",
+  "published": {
+    "e2e": 40.1,
+    "nms": 40.9
+  },
+  "tol": 0.1,
+  "torch": "2.13.0+cu126",
+  "ultralytics": "8.4.120",
+  "weights": "/home/student/weights/yolo26n.pt",
+  "weights_sha256": "9b09cc8bf347f0fc8a5f7657480587f25db09b34bf33b0652110fb03a8ad4fef"
+}

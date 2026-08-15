@@ -1,0 +1,17 @@
+# Pin ultralytics: the head API this repo depends on (Detect.end2end as a settable
+# property, Detect.fuse() removing the one2many branch, the `end2end` val/predict arg)
+# is version-sensitive. Bump deliberately and re-run Phase 0 when you do.
+ultralytics>=8.4.120,<8.5
+torch>=2.4
+torchvision>=0.19
+numpy>=1.26
+opencv-python>=4.9
+
+# COCO evaluation reference. Ultralytics itself uses faster-coco-eval; pycocotools is
+# only needed if you want a second independent check in tests.
+faster-coco-eval>=1.6.7
+# pycocotools>=2.0.7
+
+# reporting
+matplotlib>=3.8
+pytest>=8.0

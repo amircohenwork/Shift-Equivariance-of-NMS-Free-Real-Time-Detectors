@@ -1,0 +1,157 @@
+{
+  "B1_preproc_identity": {
+    "checked": 32,
+    "geometry_mismatches": [],
+    "pass": true,
+    "pixel_mismatches": []
+  },
+  "B2_deshift_roundtrip": {
+    "max_abs_err_px": 5.9470774431247264e-05,
+    "n_images": 50,
+    "pass": true,
+    "shifts_tested": [
+      [
+        0,
+        0
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        1,
+        1
+      ],
+      [
+        31,
+        0
+      ],
+      [
+        0,
+        31
+      ],
+      [
+        31,
+        31
+      ]
+    ],
+    "tol_px": 0.001,
+    "worst_case": {
+      "image_id": 33707,
+      "shift": [
+        0,
+        0
+      ]
+    }
+  },
+  "B2b_map_equivariance": {
+    "max_abs_err_px": 5.7220458984375e-06,
+    "pass": true,
+    "tol_px": 0.001
+  },
+  "B3_determinism": {
+    "0,0": {
+      "identical": true,
+      "n_dets": 73175,
+      "sha256": {
+        "cls": "fa2775a419e3cbaf835940cd28f38f380422d05b2c98cb63705c3d87494faa0d",
+        "counts": "d07ab7834ada8c87a769f22ae30c17d30b36458e664ba20a223fd7eb5e716b9f",
+        "score": "4f149e1cb942122fd0432cc65a925c8e62a528f917cadf4662d11f27b23c041e",
+        "xyxy": "36171998fa3d686168992c37a791f011c4e798b9099799311a990b76f7b9c2b8"
+      }
+    },
+    "pass": true
+  },
+  "B4_evaluator": {
+    "abs_delta": {
+      "AP": 0.0,
+      "AP50": 0.0,
+      "AP_large": 0.0,
+      "AP_medium": 0.0,
+      "AP_small": 0.0
+    },
+    "backend": "faster_coco_eval",
+    "ours": {
+      "AP": 0.42243167035909956,
+      "AP50": 0.5832179542778594,
+      "AP_large": 0.6320271665210205,
+      "AP_medium": 0.4765011576643294,
+      "AP_small": 0.20821376803487987
+    },
+    "pass": true,
+    "reference": {
+      "AP": 0.42243167035909956,
+      "AP50": 0.5832179542778594,
+      "AP_large": 0.6320271665210205,
+      "AP_medium": 0.4765011576643294,
+      "AP_small": 0.20821376803487987
+    },
+    "tol": 0.0001
+  },
+  "B5_no_fusion": {
+    "fingerprint": "0f77de8badc3f27f8cbb81c72c1b05aae0d492f71bd024ed19c16a089b025e20",
+    "heads": [
+      {
+        "one2many_present": true,
+        "one2one_present": true,
+        "type": "Detect"
+      }
+    ],
+    "n_batchnorm": 114,
+    "pass": true,
+    "weights_unchanged_by_head_switch": true
+  },
+  "B6_canvas_effect": {
+    "AP_canvas640": {
+      "AP": 0.42243167035909956,
+      "AP50": 0.5832179542778594,
+      "AP_large": 0.6320271665210205,
+      "AP_medium": 0.4765011576643294,
+      "AP_small": 0.20821376803487987
+    },
+    "AP_canvasN_delta0": {
+      "AP": 0.4232517938436274,
+      "AP50": 0.5856094522404292,
+      "AP_large": 0.630388552837266,
+      "AP_medium": 0.47601799588377913,
+      "AP_small": 0.20841170576346923
+    },
+    "canvas": 672,
+    "dAP": {
+      "AP": 0.0008201234845278127,
+      "AP50": 0.0023914979625697663,
+      "AP_large": -0.0016386136837545084,
+      "AP_medium": -0.0004831617805502453,
+      "AP_small": 0.00019793772858936465
+    },
+    "detections_bit_identical": false,
+    "imgsz": 640,
+    "note": "Padding the canvas to fit the shift grid changes the input; a non-zero dAP here is the border/positional-encoding effect, measured at zero shift. It is a result, not a bug. Report it next to the padding-value ablation."
+  },
+  "baseline_AP_canvas640": {
+    "AP": 0.42243167035909956,
+    "AP50": 0.5832179542778594,
+    "AP_large": 0.6320271665210205,
+    "AP_medium": 0.4765011576643294,
+    "AP_small": 0.20821376803487987
+  },
+  "device": "0",
+  "gate_pass": true,
+  "gates": {
+    "B1_preproc_identity": true,
+    "B2_deshift_roundtrip": true,
+    "B2b_map_equivariance": true,
+    "B3_determinism": true,
+    "B4_evaluator": true,
+    "B5_no_fusion": true
+  },
+  "head": "nms",
+  "max_shift": 31,
+  "model": "yolo26n",
+  "subset": 500,
+  "torch": "2.13.0+cu126"
+}

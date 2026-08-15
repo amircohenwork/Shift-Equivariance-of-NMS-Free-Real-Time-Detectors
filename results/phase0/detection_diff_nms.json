@@ -1,0 +1,38 @@
+{
+  "AP_ours_full_precision": 40.83357108453876,
+  "AP_ours_rounded": 40.832768185517274,
+  "AP_theirs": 40.86702937586314,
+  "examples": [
+    {
+      "image_id": 231549,
+      "ours": 104,
+      "theirs": 103
+    },
+    {
+      "image_id": 287714,
+      "ours": 177,
+      "theirs": 175
+    },
+    {
+      "image_id": 379800,
+      "ours": 199,
+      "theirs": 198
+    },
+    {
+      "image_id": 553990,
+      "ours": 44,
+      "theirs": 45
+    }
+  ],
+  "head": "nms",
+  "images_with_count_diff": 4,
+  "max_bbox_delta_px": 636.4530439453125,
+  "max_score_delta": 0.0010742365732789045,
+  "model": "yolo26n",
+  "n_images": 4998,
+  "n_ours": 747359,
+  "n_theirs": 747356,
+  "pred_json": "/home/student/runs/detect/val-31/predictions.json",
+  "residual_after_rounding": 0.034261190345866055,
+  "rounding_effect": -0.0008028990214867804
+}

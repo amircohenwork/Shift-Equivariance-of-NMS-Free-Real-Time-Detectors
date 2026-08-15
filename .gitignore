@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# large regenerable artifacts
+cache/
+runs/
+*.pt
+*.u8
+*.partial
+logs/
+
+# results/ IS committed -- it is the evidence for the numbers in the README.
+# Only the bulky per-shift detection caches under cache/ are excluded.
+
+.DS_Store

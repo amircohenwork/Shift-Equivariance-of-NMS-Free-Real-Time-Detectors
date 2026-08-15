@@ -1,0 +1,46 @@
+{
+  "head": "nms",
+  "model": "yolo26n",
+  "runs": {
+    "ours (tf32 off, unfused, deterministic)": {
+      "AP": 40.83357108453876,
+      "AP50": 56.83638830200696,
+      "delta_vs_ultralytics": -0.033458291324379275,
+      "fuse": false,
+      "n_dets": 747359,
+      "tf32": false
+    },
+    "tf32 ON, fused  (= Ultralytics defaults)": {
+      "AP": 40.82655303837262,
+      "AP50": 56.83138609897884,
+      "delta_vs_ultralytics": -0.04047633749051727,
+      "fuse": true,
+      "images_compared": 3869,
+      "max_abs_score_delta": 0.06143929809331894,
+      "n_dets": 747544,
+      "tf32": true
+    },
+    "tf32 ON, unfused": {
+      "AP": 40.83234612854607,
+      "AP50": 56.82786032425688,
+      "delta_vs_ultralytics": -0.03468324731706929,
+      "fuse": false,
+      "images_compared": 4258,
+      "max_abs_score_delta": 0.1366531401872635,
+      "n_dets": 747372,
+      "tf32": true
+    },
+    "tf32 off, unfused, cudnn.benchmark": {
+      "AP": 40.83357108453876,
+      "AP50": 56.83638830200696,
+      "delta_vs_ultralytics": -0.033458291324379275,
+      "deterministic": false,
+      "fuse": false,
+      "images_compared": 4998,
+      "max_abs_score_delta": 0.0,
+      "n_dets": 747359,
+      "tf32": false
+    }
+  },
+  "ultralytics_square_baseline": 40.86702937586314
+}
