@@ -1,16 +1,30 @@
 """COCO ground truth + a one-shot preprocessing cache.
 
-The single most important performance decision in this repo lives here.
+Decode and letterbox each image **once** into a uint8 [3, tile, tile] memmap. Applying a
+shift is then a device-side slice-assign into a padded canvas, so JPEG decoding never
+appears inside the shift loop.
 
-A naive sweep re-decodes and re-letterboxes every image once per shift. At 32x32 / step 2
-that is 256 shifts x N images of JPEG decode + two cv2.resize calls -- the sweep becomes
-CPU-bound on image loading and the GPU idles. Instead we letterbox each image **once**
-into a uint8 [3, imgsz, imgsz] tensor and persist it to a memmap. Applying a shift then
-costs one device-side slice-assign into a padded canvas, so every later pass over the
-shift grid is pure GPU work.
+How much is that worth? Measured, not assumed
+---------------------------------------------
+The usual argument is that re-decoding per shift multiplies the JPEG work by |grid| and
+strands the GPU behind libjpeg. `scripts/09_cache_benefit.py` times both paths end to end,
+and on the development machine (A10, 36 cores, COCO val at 640) the answer is **1.01x --
+about 1%**. Decode costs 2.0 ms/image single-threaded against 3.1 ms/image of GPU work, so
+it hides behind the forward pass even with a single prefetching worker. On this hardware
+the cache is not what makes the study feasible.
 
-Cost: N * 3 * 640 * 640 bytes = 1.2 GB per 1000 images. That is the price of turning a
-day of dataloader into minutes of GPU.
+It is kept anyway, for reasons that are not speed:
+
+* **reproducibility** -- every shift sees byte-identical pixels, verified once against the
+  Ultralytics dataloader on all 5000 images (gate B1). Re-decoding per shift re-verifies
+  nothing and reintroduces a dataloader-shaped variable into an experiment about tiny
+  perturbations;
+* **it is free** -- 0.3 min to build, 1.2 GB per 1000 images;
+* **the margin is hardware-dependent** -- decode hides only while decode/workers < GPU time
+  per image. A CPU-poor box, a larger `imgsz`, bigger source images, or a faster GPU all
+  flip that inequality, and then the cache is the difference between hours and days.
+
+Re-run `09_cache_benefit.py` on any new machine before assuming either way.
 """
 
 from __future__ import annotations

@@ -1,0 +1,18 @@
+{
+  "batch": 64,
+  "cache_build_hours": 0.004546419502778716,
+  "cache_gb": 1.2288,
+  "decode_workers": 2,
+  "head": "e2e",
+  "model": "yolo26n",
+  "ms_per_image_cached": 3.1006023440004356,
+  "ms_per_image_naive": 3.0812613470000847,
+  "n_images": 1000,
+  "overhead_pct": -0.6237819253983038,
+  "s_per_shift_cached": 3.1006023440004356,
+  "s_per_shift_naive": 3.0812613470000847,
+  "speedup": 0.993762180746017,
+  "sweep_hours_cached": 0.22048727779558652,
+  "sweep_hours_naive": 0.2191119180088949,
+  "sweep_shifts": 256
+}

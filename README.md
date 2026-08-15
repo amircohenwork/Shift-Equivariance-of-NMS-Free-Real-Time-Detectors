@@ -460,7 +460,7 @@ byte-deterministic pipeline**, so no reported ΔAP or AP(δ) is affected.
 
 | stage | work | note |
 |---|---|---|
-| preprocess cache | N image decodes, once | 1.2 GB per 1000 images; removes the dataloader from every later loop |
+| preprocess cache | N image decodes, once | 1.2 GB per 1000 images. Measured worth on this box: **1.01x** (`09`) -- decode hides behind the GPU. Kept for reproducibility, not speed |
 | oracle inference | `4 × N` forwards | 62 s on full val |
 | **oracle greedy** | **`2 × 1 × 4 × N` AP evaluations** | **the real bottleneck; ~22 min/head** |
 | sweep inference | `256 × N` forwards at step 2 | ~14 min per head at N=1000 |
