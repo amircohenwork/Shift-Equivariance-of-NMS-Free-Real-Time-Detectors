@@ -189,12 +189,14 @@ class PreprocCache:
     """uint8 [N, 3, imgsz, imgsz] RGB memmap + per-image letterbox geometry."""
 
     def __init__(self, root: str | Path, spec: ModelSpec, image_ids: list[int], img_dir: str | Path,
-                 pad_value: int = 114):
+                 pad_value: int = 114, tile: int | None = None):
         self.root = Path(root)
         self.spec = spec
         self.image_ids = list(image_ids)
         self.img_dir = Path(img_dir)
-        self.imgsz = spec.imgsz
+        # `tile` is the letterbox target. It equals spec.imgsz in "grow" mode and
+        # imgsz - max_shift in "fit" mode, so the cache key must carry it.
+        self.imgsz = spec.imgsz if tile is None else int(tile)
         # pad_value is part of the key: a cache built with gray borders is a different
         # dataset from one built with black borders, and silently reusing it would
         # invalidate the padding ablation.

@@ -35,6 +35,12 @@ via test-time augmentation, but only by putting NMS back.
 Full numbers in [Results](#results). No training is involved: everything is inference on
 public pretrained checkpoints.
 
+> **[`PROTOCOL.md`](PROTOCOL.md) is frozen** (v1.0.0, hash `7daf22d45cd62116`). Every
+> threshold, the exact prediction↔GT matching rule, and every deviation from Manfredi &
+> Wang are pinned there before results are read. `shifteq/protocol.py` is its
+> machine-readable twin, `tests/test_protocol_frozen.py` fails if the two drift, and every
+> run manifest records the protocol hash. Read it before the results.
+
 ---
 
 ## Quickstart
@@ -49,7 +55,7 @@ python3 -m venv venv && . venv/bin/activate
 pip install -r requirements.txt
 
 make setup     # COCO val2017 images + labels + instances_val2017.json (~2.5 GB)
-make test      # 44 unit tests -- no GPU, no dataset, no weights needed, ~5 s
+make test      # 62 unit tests -- no GPU, no dataset, no weights needed, ~5 s
 ```
 
 Point Ultralytics at the dataset once (the setup script prints the exact command):
@@ -288,6 +294,11 @@ original image --[Ultralytics val letterbox]--> 640 x 640
 
 * the canvas is stride-aligned and **constant across shifts**, so the anchor grid never
   changes shape — only the content moves;
+* two embedding modes, both strictly no-crop: `grow` (frozen default — letterbox to 640,
+  canvas 672; full resolution, but a non-validated input size, measured at +0.225 AP) and
+  `fit` (letterbox to 609, canvas 640; the validated input size at ~5% less resolution).
+  Select with `--embed-mode`; see [`PROTOCOL.md` §1](PROTOCOL.md) for the deviations from
+  Manfredi & Wang, including gray-114 fill rather than black;
 * shifts are `(dy, dx)` in `[0, M]²`, non-negative because the canvas grows toward the
   bottom-right;
 * predictions are de-shifted (`−δ`, then the inverse letterbox) and evaluated against
@@ -299,8 +310,9 @@ original image --[Ultralytics val letterbox]--> 640 x 640
 
 ### Metric definitions we chose
 
-Flicker and jitter are **not** standardised; these are choices, and the paper should state
-them.
+Flicker and jitter are **not** standardised; these are choices. They are pinned in
+[`PROTOCOL.md` §6–7](PROTOCOL.md), including the exact greedy matching algorithm, crowd
+handling, and tie-breaks. Summary:
 
 * `detected(g, δ)` — a de-shifted prediction exists with the same class, IoU ≥ 0.5, and
   score ≥ τ. τ is a real knob: at COCO's evaluation threshold of 0.001 almost nothing ever
@@ -476,7 +488,8 @@ shifteq/
   tta.py        shift test-time augmentation, three merge strategies
   pipeline.py   worker pool: GPU inference for δ_{k+1} overlaps CPU eval of δ_k
 scripts/        00 setup .. 08 numerics control
-tests/          44 tests; run on a laptop with no GPU, dataset, or weights
+tests/          62 tests; run on a laptop with no GPU, dataset, or weights
+PROTOCOL.md     the frozen pre-registration -- read this first
 results/        committed outputs of the runs reported above
 ```
 

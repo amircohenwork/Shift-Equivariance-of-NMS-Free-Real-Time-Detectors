@@ -26,12 +26,17 @@ from shifteq.data import PreprocCache, load_coco_gt, select_subset  # noqa: E402
 from shifteq.detstore import DetStore, RunManifest  # noqa: E402
 from shifteq.infer import PostprocCfg, ShiftRunner, infer_geometry, log_plan  # noqa: E402
 from shifteq.modelzoo import MODELS, assert_unfused, load_detector, resolve_weights, set_head, weight_fingerprint  # noqa: E402
+from shifteq.protocol import SHIFT as PROTOCOL_SHIFT, protocol_hash  # noqa: E402
 from shifteq.utils import LOGGER, set_deterministic, setup_logging, sha256_of_file, shift_grid, write_json  # noqa: E402
 
 
-def run_id_for(model: str, head: str, max_shift: int, step: int, subset: int | None, pad: int) -> str:
+def run_id_for(model: str, head: str, max_shift: int, step: int, subset: int | None, pad: int,
+               embed_mode: str = "grow") -> str:
     sub = "full" if subset is None else f"n{subset}"
-    return f"{model}_{head}_m{max_shift}s{step}_{sub}_pad{pad}"
+    rid = f"{model}_{head}_m{max_shift}s{step}_{sub}_pad{pad}"
+    # "grow" is the frozen default, so its run ids stay as published; anything else is
+    # tagged, because a cache built under a different embedding is a different experiment.
+    return rid if embed_mode == "grow" else f"{rid}_{embed_mode}"
 
 
 def add_common_args(ap: argparse.ArgumentParser) -> None:
@@ -44,6 +49,10 @@ def add_common_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--subset-seed", type=int, default=0)
     ap.add_argument("--max-shift", type=int, default=1)
     ap.add_argument("--step", type=int, default=1)
+    ap.add_argument("--embed-mode", default=None, choices=["grow", "fit"],
+                    help="grow: letterbox to imgsz, canvas imgsz+M (full resolution, larger "
+                         "input). fit: letterbox to imgsz-M, canvas imgsz (validated input "
+                         "size, slightly lower resolution). Default from shifteq.protocol.")
     ap.add_argument("--pad-value", type=int, default=114,
                     help="canvas/letterbox fill; -1 = replicate, -2 = reflect")
     ap.add_argument("--conf", type=float, default=0.001)
@@ -73,11 +82,12 @@ def prepare(args):
     gt = load_coco_gt(ann, ids)
 
     spec = MODELS[args.model]
+    mode = args.embed_mode or PROTOCOL_SHIFT["embed_mode"]
+    geom = infer_geometry(spec, args.max_shift, mode)
     cache = PreprocCache(Path(args.cache_dir) / "preproc", spec, ids, img_dir,
-                         pad_value=args.pad_value).build()
+                         pad_value=args.pad_value, tile=geom.tile).build()
     net, spec = load_detector(spec, device=args.device)
     set_head(net, args.head, max_det=args.max_det)
-    geom = infer_geometry(spec, args.max_shift)
     pp = PostprocCfg(conf=args.conf, iou=args.iou, max_det=args.max_det)
     # The letterbox border and the canvas border are set by the same flag, so the
     # padding ablation changes one thing rather than two.
@@ -93,7 +103,8 @@ def make_manifest(args, spec, net, geom, ids) -> RunManifest:
 
     w = resolve_weights(spec)
     return RunManifest(
-        run_id=run_id_for(args.model, args.head, args.max_shift, args.step, args.subset, args.pad_value),
+        run_id=run_id_for(args.model, args.head, args.max_shift, args.step, args.subset,
+                          args.pad_value, args.embed_mode or PROTOCOL_SHIFT["embed_mode"]),
         model=spec.name, head=args.head,
         weights_sha256=sha256_of_file(w), weight_fingerprint=weight_fingerprint(net),
         imgsz=spec.imgsz, stride=spec.stride, preproc=spec.preproc,
@@ -103,6 +114,7 @@ def make_manifest(args, spec, net, geom, ids) -> RunManifest:
         fusion_evidence=assert_unfused(net, require_both_heads=False),
         image_ids=list(map(int, ids)),
         ultralytics_version=ultralytics.__version__, torch_version=torch.__version__,
+        notes=f"protocol=v{__import__('shifteq.protocol', fromlist=['VERSION']).VERSION} hash={protocol_hash()} embed_mode={geom.embed_mode} tile={geom.tile}",
     )
 
 
@@ -117,7 +129,8 @@ def main():
     gt, ids, spec, cache, net, geom, pp, runner, ann = prepare(args)
 
     store = DetStore(args.store_dir, run_id_for(args.model, args.head, args.max_shift,
-                                                args.step, args.subset, args.pad_value))
+                                                args.step, args.subset, args.pad_value,
+                                                geom.embed_mode))
     store.write_manifest(make_manifest(args, spec, net, geom, ids))
 
     grid = shift_grid(args.max_shift, args.step)

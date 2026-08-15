@@ -115,7 +115,9 @@ class ShiftRunner:
                     continue
                 d = det.float().cpu().numpy()
                 box = deshift_boxes(
-                    d[:, :4], dy, dx, self.cache.meta[i], self.geom.imgsz,
+                    # geom.tile, not geom.imgsz: in "fit" mode the letterbox target is
+                    # smaller than the network input, and the stretch inverse divides by it.
+                    d[:, :4], dy, dx, self.cache.meta[i], self.geom.tile,
                     preproc=self.spec.preproc, clip=not self.is_rtdetr,
                 )
                 counts[i] = len(box)
@@ -174,8 +176,11 @@ class ShiftRunner:
         return out
 
 
-def infer_geometry(spec: ModelSpec, max_shift: int) -> ShiftGeometry:
-    return ShiftGeometry(imgsz=spec.imgsz, max_shift=max_shift, stride=spec.stride)
+def infer_geometry(spec: ModelSpec, max_shift: int, embed_mode: str | None = None) -> ShiftGeometry:
+    from .protocol import SHIFT
+
+    return ShiftGeometry(imgsz=spec.imgsz, max_shift=max_shift, stride=spec.stride,
+                         embed_mode=embed_mode or SHIFT["embed_mode"])
 
 
 def log_plan(spec: ModelSpec, geom: ShiftGeometry, n_images: int, n_shifts: int, batch: int):

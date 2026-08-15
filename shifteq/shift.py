@@ -48,22 +48,53 @@ def canvas_size(imgsz: int, max_shift: int, stride: int = 32) -> int:
 
 @dataclass
 class ShiftGeometry:
+    """Two ways to buy a shift budget without ever cropping.
+
+    `grow`  letterbox to `imgsz`, embed in a canvas of align(imgsz + max_shift). Keeps the
+            full letterbox resolution and stays byte-identical to the Ultralytics val
+            dataloader, but shows the network a size it was not validated at (measured:
+            +0.225 AP at delta=0, gate B6).
+
+    `fit`   letterbox to `imgsz - max_shift`, embed in a canvas of exactly `imgsz`. The
+            network input is the validated size; the shift budget comes out of the image
+            scale instead. Closer to Manfredi & Wang in spirit, and the variant to use if a
+            reviewer objects that `grow` changes the input distribution.
+
+    Both are strictly no-crop: the whole letterboxed tile is present at every delta, so an
+    object at the frame edge keeps its entire neighbourhood. Only the tile's absolute
+    position in the canvas changes.
+    """
+
     imgsz: int
     max_shift: int
     stride: int
+    embed_mode: str = "grow"
+
+    def __post_init__(self):
+        if self.embed_mode not in ("grow", "fit"):
+            raise ValueError(f"embed_mode must be 'grow' or 'fit', got {self.embed_mode!r}")
+        if self.embed_mode == "fit" and self.max_shift >= self.imgsz:
+            raise ValueError("max_shift must be smaller than imgsz in 'fit' mode")
 
     @property
     def canvas(self) -> int:
+        if self.embed_mode == "fit":
+            return self.imgsz
         return canvas_size(self.imgsz, self.max_shift, self.stride)
 
     @property
+    def tile(self) -> int:
+        """Side of the letterboxed image that gets pasted into the canvas."""
+        return self.imgsz - self.max_shift if self.embed_mode == "fit" else self.imgsz
+
+    @property
     def is_identity(self) -> bool:
-        return self.max_shift == 0 and self.canvas == self.imgsz
+        return self.max_shift == 0 and self.canvas == self.imgsz == self.tile
 
     def check(self, dy: int, dx: int) -> None:
         if not (0 <= dy <= self.max_shift and 0 <= dx <= self.max_shift):
             raise ValueError(f"shift ({dy},{dx}) outside [0,{self.max_shift}]^2")
-        if self.imgsz + max(dy, dx) > self.canvas:
+        if self.tile + max(dy, dx) > self.canvas:
             raise ValueError("canvas too small for requested shift")
 
 
@@ -87,7 +118,7 @@ def embed(
     batches, re-allocating the canvas every step is pure allocator churn.
     """
     b, c, h, w = imgs_u8.shape
-    assert h == w == geom.imgsz, (h, w, geom.imgsz)
+    assert h == w == geom.tile, (h, w, geom.tile)
     geom.check(dy, dx)
     n = geom.canvas
 

@@ -56,7 +56,8 @@ def main():
     gt, ids, spec, cache, net, geom, pp, runner, ann = _b.prepare(args)
     cmi = class_map_inverse(gt, coco80_to_coco91())
 
-    rid = _b.run_id_for(args.model, args.head, args.max_shift, args.step, args.subset, args.pad_value)
+    rid = _b.run_id_for(args.model, args.head, args.max_shift, args.step, args.subset,
+                        args.pad_value, geom.embed_mode)
     rid = f"{rid}_{args.tag}" if args.tag else rid
     out_dir = Path(args.out_dir)
     jsonl = out_dir / f"{rid}.jsonl"
