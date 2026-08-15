@@ -32,9 +32,10 @@ repo is the first shift-equivariance study of one-to-one NMS-free detectors.
    46.5% dropout vs 28.8%, and **80% of small objects** detected at δ=(0,0) vanish at some
    shift, while box jitter is if anything slightly lower.
 2. **The instability is grid-locked, not noise.** A 1-px-resolution sweep over two full
-   strides puts 35–78% of spectral power on the network's downsampling periods (2/4/8/16/32)
-   against 16% expected by chance — 19 of 20 curves, permutation-tested. **Even shifts
-   outscore odd shifts** by up to +0.34 AP: the stride-2 stem's aliasing signature.
+   strides puts 41–89% of spectral power on the network's downsampling periods (2/4/8/16/32)
+   against 16% expected by chance — **20 of 20 curves**, permutation-tested on the full
+   validation set. **Even shifts outscore odd shifts**, most on small objects: the stride-2
+   stem's aliasing signature.
 3. **The NMS-free head cannot exploit its own variance.** Shift-TTA recovers +0.86 AP, but
    only by putting NMS back; the merge that stays NMS-free loses 26 AP.
 
@@ -253,15 +254,16 @@ line at full 1-px resolution over two complete strides** (δ ∈ [0, 63], 64 poi
 samples the FFT bins land exactly on the periods of interest — period 32 is bin 2, 16 is
 bin 4, 8 is bin 8 — so a stride-locked response puts power in a single bin with no leakage.
 
-**Result: 19 of 20 curves are grid-locked** (2 heads × 2 axes × 5 size buckets).
+**Result: 20 of 20 curves are grid-locked** on the full validation set (2 heads × 2 axes ×
+5 size buckets). At N = 1000 it was 19/20; the extra images made it unanimous.
 
 | | e2e | nms |
 |---|---|---|
-| curves grid-locked | 10/10 | 9/10 |
-| stride power (sum over periods 2/4/8/16/32) | 0.35 – 0.71 | 0.40 – 0.78 |
-| enrichment over chance (16%) | 2.3× – 4.6× | 2.5× – 5.0× |
-| peak period, overall AP | 2 px (x), 8 px (y) | 2 px (x), 8 px (y) |
-| best family-wise p | 0.0006 | 0.0000 |
+| curves grid-locked | 10/10 | 10/10 |
+| stride power (sum over periods 2/4/8/16/32) | 0.55 – 0.83 | 0.41 – 0.89 |
+| enrichment over chance (16%) | 3.5× – 5.3× | 2.6× – 5.7× |
+| peak period, overall AP | 2 px (x), 16 px (y) | 32 px (x), 32 px (y) |
+| best family-wise p | < 0.0001 | < 0.0001 |
 
 Peak periods land on network strides almost every time. Significance is a **permutation
 null over δ** — shuffling destroys the ordering while preserving the marginal AP
@@ -269,10 +271,11 @@ distribution, so it controls for the finite-image-sample noise floor rather than
 it away.
 
 **Parity effect.** The interpretable form of the period-2 peak: **even shifts outscore odd
-shifts**, by +0.187 AP for e2e overall (p = 0.0006), +0.262 on large objects (p = 0.0015),
-and +0.342 on small objects along y (p = 0.010). That is the stride-2 stem's aliasing
-signature — shifting by an odd number of pixels lands the whole cascade on the wrong
-sub-sampling phase.
+shifts**. On the full set this is significant for *both* heads and strongest on small
+objects — e2e +0.230 AP_small (p = 0.033), nms +0.237 AP_small along y (p = 0.003), and
++0.06 to +0.07 on overall AP for both. That is the stride-2 stem's aliasing signature:
+shifting by an odd number of pixels lands the whole cascade on the wrong sub-sampling
+phase, and the objects with the least spatial support pay for it most.
 
 Two mistakes in the first version of this analysis, both fixed, both worth knowing:
 
@@ -283,7 +286,11 @@ Two mistakes in the first version of this analysis, both fixed, both worth knowi
   Added a max-statistic permutation null; on pure noise the corrected p ranges 0.08–0.99
   where the uncorrected one produced false positives.
 
-![FFT head comparison](results/figures/fft_head_comparison.png)
+![FFT head comparison](results/figures/fft_head_comparison_full.png)
+
+*Full validation set, 5000 images. Top: AP(δ) at 1-px resolution over two full
+strides. Bottom: power spectrum; green lines are the network's downsampling periods
+2/4/8/16/32, dotted line is the uniform (chance) level.*
 
 ### 7. The gate — is there a measurable, consistent gap between the heads?
 
@@ -294,25 +301,47 @@ curve alone.** That distinction is structural, not a contradiction.
 |---|---|---|
 | oracle ΔAP | 5000 | **clear** — 3.76 vs 3.25, ΔAP50 6.96 vs 6.08 |
 | flicker / dropout / SI | 1000 | **clear** — 39.2 vs 30.2%, 46.5 vs 28.8%, 0.576 vs 0.616 |
-| uniform AP(δ) curve, paired across δ | 1000 | **mixed** — e2e worse on 3/10 curves, nms on 2/10, 5 n.s. |
+| uniform AP(δ) curve, paired across δ | 5000 | **directional** — e2e worse on 4/10 curves, nms on 1/10, 5 n.s. |
 
-The uniform-shift curve averages AP over 1000 images, which cancels exactly the per-image
-variation that the oracle envelope and the per-object metrics accumulate. It is therefore
-the *least* powerful of the three instruments, and 5 of its 10 curves being
-non-significant is what low power looks like, not evidence of no effect.
+Paired dispersion test on the full validation set, mean absolute deviation from each head's
+own mean (lower = more stable):
 
-Where the curve *is* significant it agrees with the other two (e2e worse on overall AP and
-AP50 along y, and AP50 along x). Where it reverses — medium objects along x, large objects
-along y — the size-conditional ranges are within noise of each other in the 2-D sweep too.
+| axis | curve | e2e | nms | p | |
+|---|---|---|---|---|---|
+| x | AP | 0.086 | 0.089 | 0.73 | n.s. |
+| x | AP50 | 0.120 | 0.092 | 0.009 | **e2e worse** |
+| x | **AP_small** | **0.363** | **0.193** | **<0.0001** | **e2e worse** |
+| x | AP_medium | 0.108 | 0.154 | 0.001 | *nms worse* |
+| x | AP_large | 0.197 | 0.116 | 0.0001 | **e2e worse** |
+| y | AP | 0.089 | 0.082 | 0.40 | n.s. |
+| y | AP50 | 0.120 | 0.111 | 0.43 | n.s. |
+| y | AP_small | 0.275 | 0.231 | 0.084 | n.s. |
+| y | AP_medium | 0.153 | 0.162 | 0.36 | n.s. |
+| y | AP_large | 0.182 | 0.133 | 0.020 | **e2e worse** |
+
+Going from N = 1000 to N = 5000 moved the count from 3-vs-2 to **4-vs-1**, and the single
+largest effect appeared where the proposal predicted it: **AP_small along x, where the
+NMS-free head is 1.9× more dispersed** (0.363 vs 0.193, p < 0.0001). At N = 1000 that same
+curve was non-significant and its *range* statistic pointed the other way — a good
+illustration of why the range of a 64-point curve is a poor test and the paired dispersion
+test is the right one.
+
+Two curves that were significant at N = 1000 (y AP, y AP50) became non-significant at
+N = 5000. With five times the images the estimates are less noisy, not more, so the honest
+reading is that those two were N = 1000 flukes rather than that the effect went away.
+
+The uniform-shift curve remains the *least* powerful of the three instruments: averaging AP
+over images cancels exactly the per-image variation that the oracle envelope and the
+per-object metrics accumulate. Its 5 remaining non-significant curves are consistent with a
+small effect it cannot resolve, not with no effect.
 
 `11_head_gap.py` runs the paired test: both heads saw the same images at the same δ, so
 per-δ absolute deviations from each head's own mean are compared under a sign-flip null.
 That controls for deltas that are simply hard for both heads, which an unpaired comparison
 would miscount as signal.
 
-> **Caveat, stated plainly:** these numbers are N = 1000. A full-validation-set (N = 5000)
-> 1-D sweep is the fair test of whether the five non-significant curves are a real null or
-> just underpowered, and it is the single most useful next run.
+> **Scope:** the spectral test and the paired dispersion test are on the **full 5000-image
+> validation set**. The flicker / jitter / SI row is still N = 1000.
 
 ### 8. The step-2 shortcut is conservative, not exact
 
