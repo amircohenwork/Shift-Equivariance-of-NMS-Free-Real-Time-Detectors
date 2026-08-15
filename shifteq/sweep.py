@@ -54,9 +54,14 @@ def run_sweep(
     resume: bool = True,
     areas: tuple[str, ...] = AREA_KEYS,
     workers: int | None = None,
+    grid: list[tuple[int, int]] | None = None,
 ) -> list[dict]:
-    """GPU forward passes for delta_{k+1} overlap the CPU evaluation of delta_k."""
-    grid = shift_grid(max_shift, step)
+    """GPU forward passes for delta_{k+1} overlap the CPU evaluation of delta_k.
+
+    `grid` overrides the default 2-D lattice, so a 1-D line sweep gets the same caching,
+    resume and overlap behaviour rather than a parallel implementation.
+    """
+    grid = shift_grid(max_shift, step) if grid is None else list(grid)
     out_jsonl = Path(out_jsonl)
     out_jsonl.parent.mkdir(parents=True, exist_ok=True)
     done = _rows(out_jsonl) if resume else {}
