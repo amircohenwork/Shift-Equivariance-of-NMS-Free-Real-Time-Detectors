@@ -8,6 +8,14 @@ launch and watch the scripts under `scripts/`.
 | `run_crosscheck.sh` | the cross-model 1-D sweeps + padding ablation, in value order |
 | `run_followup.sh` | queued behind it: YOLOv10-N oracle/instance/TTA replication, and the K=2 oracle |
 | `watchdog.sh` | liveness monitor; writes `logs/watchdog_status.txt`, raises `/tmp/WATCHDOG_ALERT` |
+| `reporter.sh` | waits for the pipeline to finish, then writes `logs/SUMMARY.txt` |
+
+`reporter.sh` exists because nobody may be watching at the moment a run ends. Reading
+`logs/SUMMARY.txt` afterwards should be as informative as having watched it live: which
+stages completed, whether any log contains a traceback, and the headline number from every
+analysis the batch produced, each printed beside the value it is meant to be compared
+against. Dry-run it before trusting it — everything unfinished should read `not produced`,
+never a stack trace.
 
 ## Watching a run
 
