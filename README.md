@@ -27,7 +27,8 @@ repo is the first shift-equivariance study of one-to-one NMS-free detectors.
 
 **Headline findings.** On one yolo26n checkpoint, full COCO val, one-pixel shifts:
 
-1. **The NMS-free head is 15% less shift-equivariant** (ΔAP 3.76 vs 3.25), and its
+1. **The NMS-free head is 15% less shift-equivariant** (ΔAP 3.76 vs 3.25) — **replicated on
+   YOLOv10-N, where the gap is larger still (+26.8%)** — and its
    instability is concentrated in *whether an object is reported* rather than *where* —
    46.5% dropout vs 28.8%, and **80% of small objects** detected at δ=(0,0) vanish at some
    shift, while box jitter is if anything slightly lower.
@@ -40,22 +41,25 @@ repo is the first shift-equivariance study of one-to-one NMS-free detectors.
 3. **The NMS-free head cannot exploit its own variance.** Shift-TTA recovers +0.86 AP, but
    only by putting NMS back; the merge that stays NMS-free loses 26 AP.
 
-> ### ⚠️ Finding 1 has not replicated on a second checkpoint
+> ### Replication on a second checkpoint
 >
-> YOLOv10-N is the only other released checkpoint carrying both a one-to-one and a
-> one-to-many branch, which makes it a genuine second instance of finding 1's ablation. On
-> the uniform-shift dispersion test it shows **no head gap at all**: 0 of 10 curves have the
-> NMS-free head less stable, 2 have it *more* stable, and the **pre-registered primary
-> curve** (`x/AP_small`, where yolo26n showed the largest effect at p < 0.0001) comes out
-> non-significant **and opposite in sign**. By the criterion written into
-> [`PROTOCOL.md` §10.1](PROTOCOL.md) *before* the run, that is a **failed replication**.
+> YOLOv10-N is the only other released checkpoint carrying both heads, so it is a genuine
+> second instance of finding 1's ablation. **Finding 1 replicates, and finding 3 with it:**
 >
-> What this does and does not mean is spelled out in [§9](#9-cross-model-check). Short
-> version: the uniform-shift curve was always the weakest of the three instruments, and the
-> two that showed the effect most strongly on yolo26n — the oracle envelope and the instance
-> metrics — **have not yet been run on YOLOv10-N**. Until they are, finding 1 should be read
-> as a result about *one checkpoint*, not about NMS-free detection in general. Finding 2 is
-> unaffected and in fact strengthened.
+> | | yolo26n | YOLOv10-N |
+> |---|---|---|
+> | ΔAP, one-to-one vs one-to-many | 3.76 vs 3.25 (**+15.4%**) | 3.67 vs 2.89 (**+26.8%**) |
+> | dropout, small objects | 80.2% vs 57.7% | 80.9% vs 53.2% |
+> | shift-TTA gain, NMS-free head | +0.86 AP | +0.93 AP |
+>
+> One instrument dissents. The **uniform-shift dispersion test** — which we had
+> pre-registered as *the* replication test — shows no gap on YOLOv10-N at all, and its
+> pre-specified primary curve came out opposite in sign. It turns out to be the wrong
+> instrument for this question: it applies one shift to every image and so cannot see
+> per-image variation, which is where the effect lives. We report that failure in
+> [§9b](#9b-the-head-gap-replicates--on-two-instruments-out-of-three) rather than dropping
+> the instrument quietly, because a pre-registration is only worth something if the results
+> that embarrass it get published too.
 
 Full numbers in [Results](#results). No training is involved: everything is inference on
 public pretrained checkpoints.
@@ -196,13 +200,20 @@ Oracle envelope, M = 1, full validation set:
 a lower clean AP, so it loses on both axes. 73% of images change their chosen shift under
 the greedy search, so the effect is broad, not a few outliers.
 
-**One caveat on ΔAP, stated because it is an imported assumption.** The greedy runs
-**K = 1** iteration ([`PROTOCOL.md` §4](PROTOCOL.md)), justified by Manfredi & Wang's report
-that further iterations move AP by <1%. That is a measurement on *their* detectors, and it
-was never checked on ours — the committed run shows `changed = 3641/5000` at iteration 0, so
-it hit the iteration cap rather than converging. K = 1 therefore gives a **lower bound** on
-ΔAP, which is conservative in the direction that protects the claim above, but it is an
-assumption rather than a result. A K = 2 run is queued.
+**On K = 1, now measured rather than assumed.** The greedy runs **K = 1** iteration
+([`PROTOCOL.md` §4](PROTOCOL.md)), justified by Manfredi & Wang's report that further
+iterations move AP by <1% — a measurement on *their* detectors. Checked on ours:
+
+| head | ΔAP at K=1 | ΔAP at K=2 | change | images still moving at iter 1 |
+|---|---|---|---|---|
+| e2e | 3.7555 | 3.8321 | +2.0% | 610 / 5000 |
+| nms | 3.2537 | 3.3371 | +2.6% | 704 / 5000 |
+
+Two things follow. Their <1% does **not** transfer — ours move 2–2.6%, and K=2 has still not
+converged, so ΔAP would keep creeping up. And **the head comparison is unaffected**: the
+ratio goes +15.4% → +14.8%. K = 1 is a conservative lower bound on the envelope and a stable
+estimate of the gap, which is the quantity the paper claims. We keep K = 1 for comparability
+with their Table 1 and report the K = 2 values alongside.
 
 Against Manfredi & Wang's Table 1 (same metric, same M=1, same dataset):
 
@@ -399,79 +410,132 @@ ranges as lower bounds.**
 
 ### 9. Cross-model check — is this about YOLO26, or about detectors?
 
-Two questions, two arms, reported separately because they have different answers.
-Pre-registered in [`PROTOCOL.md` §10](PROTOCOL.md) **before** any cross-model sweep ran.
+Two questions, pre-registered in [`PROTOCOL.md` §10](PROTOCOL.md) **before** any cross-model
+sweep ran. Both now answered, on the full validation set.
 
-*Partial: YOLOv8-N, YOLO11-N and RT-DETR-L are still running. The replication arm below is
-complete.*
+#### 9a. Grid-locking is universal — 69 of 70 curves, 5 architectures
 
-#### 9a. Grid-locking is universal — 40 of 40 curves
+| arm | AP@δ0 | stride power | enrichment | grid-locked |
+|---|---|---|---|---|
+| YOLOv8-N | 37.33 | 0.62 | 4.0× | 10/10 |
+| YOLOv10-N e2e | 38.47 | 0.72 | 4.6× | 10/10 |
+| YOLOv10-N nms | 39.53 | 0.75 | 4.8× | 10/10 |
+| YOLO11-N | 39.40 | 0.78 | 5.0× | 10/10 |
+| yolo26n e2e | 40.29 | 0.70 | 4.5× | 10/10 |
+| yolo26n nms | 40.89 | 0.70 | 4.5× | 10/10 |
+| **RT-DETR-L** | 52.84 | 0.55 | 3.5× | **9/10** |
 
-| arm | N | grid-locked | stride power | enrichment | AP at δ=0 |
-|---|---|---|---|---|---|
-| yolo26n e2e | 5000 | **10/10** | 0.70 | 4.5× | 40.29 |
-| yolo26n nms | 5000 | **10/10** | 0.70 | 4.5× | 40.89 |
-| YOLOv10-N e2e | 5000 | **10/10** | 0.72 | 4.6× | 38.47 |
-| YOLOv10-N nms | 5000 | **10/10** | 0.75 | 4.8× | 39.53 |
+Chance is 16%. RT-DETR-L is the load-bearing arm: a transformer set-prediction head on an
+HGNetv2 backbone shares essentially nothing with YOLO26 except the 2/4/8/16/32 downsampling
+ladder, and it carries the same signature. **Grid-locking is a property of the strided
+downsampling cascade, not of any architecture or head.**
 
-A second checkpoint, a different training recipe, and the same spectral signature at the
-same enrichment. Finding 2 is not a YOLO26 artefact.
+#### 9b. The head gap replicates — on two instruments out of three
 
-#### 9b. The head gap did **not** replicate
+The oracle envelope, the metric comparable to prior work:
 
-| checkpoint | e2e less stable | nms less stable | n.s. |
-|---|---|---|---|
-| yolo26n | **4**/10 | 1/10 | 5 |
-| YOLOv10-N | **0**/10 | 2/10 | 8 |
+| checkpoint | e2e ΔAP | nms ΔAP | gap | ratio |
+|---|---|---|---|---|
+| yolo26n | 3.7555 | 3.2537 | +0.5018 | **+15.4%** |
+| **YOLOv10-N** | 3.6704 | 2.8937 | +0.7766 | **+26.8%** |
 
-Sign agreement across the two checkpoints: **4/10** — below
-the 5/10 expected if the two were unrelated.
+Not only does it replicate — the gap is **larger** on the second checkpoint. ΔAP50 agrees
+(+14.5% → +19.6%).
 
-The pre-registered primary curve, `x/AP_small`, chosen because it carried yolo26n's largest
-effect:
+The instance metrics replicate almost value-for-value, including the *directions* that make
+finding 1 mechanistic rather than merely numerical:
 
-| checkpoint | e2e mean\|dev\| | nms mean\|dev\| | Δ | p | verdict |
-|---|---|---|---|---|---|
-| yolo26n | 0.3628 | 0.1930 | **+0.1697** | **<0.0001** | e2e worse |
-| YOLOv10-N | 0.1651 | 0.1991 | -0.0340 | 0.0785 | n.s., **opposite sign** |
+| metric | 26n e2e | 26n nms | v10 e2e | v10 nms |
+|---|---|---|---|---|
+| flicker % | 39.17 | 30.23 | 36.80 | 28.41 |
+| dropout % | **46.49** | 28.83 | **45.36** | 27.60 |
+| dropout, small objects % | **80.20** | 57.72 | **80.91** | 53.18 |
+| class flip % | 7.65 | *8.15* | 7.23 | *7.69* |
+| box jitter px | 1.69 | *1.85* | 1.69 | *1.76* |
+| Stability Index | 0.576 | 0.616 | 0.582 | 0.631 |
+| SI, small objects | 0.312 | 0.376 | 0.316 | 0.399 |
 
-§10.1 defines a failed replication as *"the primary curve not significant, or significant in
-the opposite direction."* This is both. **We do not get to reinterpret that after the fact** —
-that is the entire purpose of having written it down first.
+The NMS-free head drops objects far more often on both checkpoints — and on both, its boxes
+are *no jitterier* and it flips class slightly *less* often (italics). "The instability is in
+detection, not localisation" is not a yolo26n quirk.
 
-#### What this does and does not license
+Shift-TTA replicates too: the NMS-free head gains **+0.93 AP** on YOLOv10-N (+0.86 on
+yolo26n) from an NMS merge, roughly 3× what the one-to-many head gains, while the merge that
+stays NMS-free loses 25 AP.
 
-It does **not** show the head effect is absent. The uniform-shift curve is the weakest of
-this project's three instruments, and we said so before running it: it averages over a
-single shift applied to every image, which cannot see per-image variation that is
-uncorrelated across the dataset. On yolo26n the effect was **3× larger** in the oracle
-envelope (ΔAP 3.76 vs 3.25) and larger still in the instance metrics (dropout 46.5% vs
-28.8%). **Neither has been run on YOLOv10-N yet** — both are queued.
+#### The instrument that failed, and why that is worth reporting
 
-It does **not** show the yolo26n result was a fluke either. Five of ten curves reached
-significance there against 0.5 expected by chance, at N=5000.
+The **uniform-shift dispersion test does not replicate**: 0 of 10 curves show the NMS-free
+head less stable on YOLOv10-N, 2 show the opposite, and sign agreement across the two
+checkpoints is 4/10 — below the 5/10 of unrelated curves. The pre-registered primary curve
+(`x/AP_small`) came out non-significant **and opposite in sign**, which is a failed
+replication by the criterion in §10.1.
 
-What it does establish is that **finding 1 is currently a claim about one checkpoint.**
-Three readings remain open, and the queued runs discriminate between them:
+**That criterion named the wrong instrument, and we only know because it was written down.**
+The uniform-shift curve applies *one* shift to every image, so it can only see variation that
+survives averaging across the dataset; the oracle and the per-object metrics resolve
+per-image variation, which is where this effect lives. On yolo26n all three happened to
+agree, which is what made the weak one look adequate. It is not.
 
-1. the effect is real but specific to YOLO26's head or training recipe (STAL, ProgLoss);
-2. the effect is general but the uniform-shift instrument is too blunt to see it on a model
-   whose overall dispersion is ~1.5× lower (YOLOv10-N sits at cv 0.132% vs yolo26n's 0.215%);
-3. the yolo26n uniform-shift result is a false positive, and the oracle/instance findings
-   rest on the other two instruments.
-
-If the oracle on YOLOv10-N also shows no gap, reading 1 or 3 is right and the paper's claim
-must narrow to YOLO26. If it reproduces yolo26n's gap, reading 2 is right and the
-uniform-shift curve should be demoted in the write-up.
+So the finding stands on the oracle envelope and the instance metrics — the two instruments
+that carried it originally — and the uniform-shift curve is demoted to what it is: an honest
+measure of *"what does a uniform translation cost in practice"*, not a test of head
+stability. We report the failure rather than dropping the instrument quietly, because the
+pre-registration is only worth anything if a result that embarrasses it gets published too.
 
 #### A side observation worth keeping
 
-**Both YOLOv10-N heads are markedly more shift-stable than either yolo26n head** — relative
-dispersion cv 0.132% / 0.146% against 0.215% / 0.218% (p ≤ 0.005, paired, relative). The newer,
-more accurate model is the *less* stable one. That is the decorrelation of accuracy and
-stability that motivated this study, showing up between models rather than within one.
+**Shift stability tracks neither accuracy nor recency.** YOLOv8-N — oldest and least accurate
+here — has the *most* stable AP curve (relative dispersion cv 0.109%); yolo26n, newest and
+most accurate, is the *least* stable (0.215–0.218%), a full 2×. That is the
+accuracy/stability decorrelation this project was built on, showing up *between* models
+rather than within one, and it does not depend on the instrument that just failed.
 
-![cross-model comparison](results/figures/crosscheck_v10.png)
+![cross-model comparison](results/figures/crosscheck.png)
+
+---
+
+### 10. Padding ablation — aliasing, or reading the border?
+
+Kayhan & van Gemert (CVPR'20): a constant padding border is an implicit absolute-position
+cue, and a network can read distance-to-frame out of it. That is a competing explanation for
+the periodicity, so [`PROTOCOL.md` §11](PROTOCOL.md) pre-registered four arms — two with a
+constant border, two with a content-derived one.
+
+| head | border | constant? | stride power | mean AP |
+|---|---|---|---|---|
+| e2e | gray 114 (protocol) | yes | 0.58 | 42.04 |
+| e2e | black 0 | yes | 0.59 | 42.09 |
+| e2e | replicate | no | **0.33** | 36.89 |
+| e2e | reflect | no | **0.62** | 28.18 |
+| nms | gray 114 | yes | 0.78 | 43.07 |
+| nms | black 0 | yes | 0.81 | 43.08 |
+| nms | replicate | no | **0.55** | 37.72 |
+| nms | reflect | no | **0.80** | 28.80 |
+
+**All 8 arms remain grid-locked (74/80 curves).** The periodicity survives with no constant
+border anywhere in the input, so the position cue is **not necessary** for it. That is what
+the ablation was for, and it answers the question.
+
+Three further readings, in decreasing confidence:
+
+* **The padding *value* is irrelevant.** Gray vs black is the one clean comparison here —
+  both constant, AP identical to 0.05 — and stride power does not move (0.58→0.59,
+  0.78→0.81).
+* **The pre-registered group test is not trustworthy on this data.** It returned "border cue
+  contributes" (constant 0.691 vs content 0.574, Δ+0.116, just past the 0.10 threshold), but
+  the two content-border arms *disagree with each other*: reflect leaves stride power
+  unchanged (0.62 vs 0.58; 0.80 vs 0.78) while replicate halves it. A mean over two arms
+  pointing opposite ways is not a summary.
+* **Neither content-border arm is a clean manipulation.** Replicate costs **−5 AP** and
+  reflect **−14 AP**, because filling the letterbox bars with smeared or mirrored image
+  content manufactures objects that no ground truth matches. That is not "remove the position
+  cue holding everything else fixed"; it is a different input distribution. More images
+  cannot fix this — the confound is structural, and a future design needs a border
+  manipulation that leaves AP intact.
+
+Reported as a departure from our own pre-registered summary statistic, with the reason,
+rather than quietly substituting a better-behaved one.
 
 ---
 
