@@ -27,7 +27,7 @@ repo is the first shift-equivariance study of one-to-one NMS-free detectors.
 
 **Headline findings.** On one yolo26n checkpoint, full COCO val, one-pixel shifts:
 
-1. **The NMS-free head is 16% less shift-equivariant** (ΔAP 3.76 vs 3.25), and its
+1. **The NMS-free head is 15% less shift-equivariant** (ΔAP 3.76 vs 3.25), and its
    instability is concentrated in *whether an object is reported* rather than *where* —
    46.5% dropout vs 28.8%, and **80% of small objects** detected at δ=(0,0) vanish at some
    shift, while box jitter is if anything slightly lower.
@@ -35,14 +35,33 @@ repo is the first shift-equivariance study of one-to-one NMS-free detectors.
    strides puts 41–89% of spectral power on the network's downsampling periods (2/4/8/16/32)
    against 16% expected by chance — **20 of 20 curves**, permutation-tested on the full
    validation set. **Even shifts outscore odd shifts**, most on small objects: the stride-2
-   stem's aliasing signature.
+   stem's aliasing signature. This now holds on **40 of 40 curves across two checkpoints**
+   (yolo26n and YOLOv10-N) — see [§9](#9-cross-model-check).
 3. **The NMS-free head cannot exploit its own variance.** Shift-TTA recovers +0.86 AP, but
    only by putting NMS back; the merge that stays NMS-free loses 26 AP.
+
+> ### ⚠️ Finding 1 has not replicated on a second checkpoint
+>
+> YOLOv10-N is the only other released checkpoint carrying both a one-to-one and a
+> one-to-many branch, which makes it a genuine second instance of finding 1's ablation. On
+> the uniform-shift dispersion test it shows **no head gap at all**: 0 of 10 curves have the
+> NMS-free head less stable, 2 have it *more* stable, and the **pre-registered primary
+> curve** (`x/AP_small`, where yolo26n showed the largest effect at p < 0.0001) comes out
+> non-significant **and opposite in sign**. By the criterion written into
+> [`PROTOCOL.md` §10.1](PROTOCOL.md) *before* the run, that is a **failed replication**.
+>
+> What this does and does not mean is spelled out in [§9](#9-cross-model-check). Short
+> version: the uniform-shift curve was always the weakest of the three instruments, and the
+> two that showed the effect most strongly on yolo26n — the oracle envelope and the instance
+> metrics — **have not yet been run on YOLOv10-N**. Until they are, finding 1 should be read
+> as a result about *one checkpoint*, not about NMS-free detection in general. Finding 2 is
+> unaffected and in fact strengthened.
 
 Full numbers in [Results](#results). No training is involved: everything is inference on
 public pretrained checkpoints.
 
-> **[`PROTOCOL.md`](PROTOCOL.md) is frozen** (v1.0.0, hash `7daf22d45cd62116`). Every
+> **[`PROTOCOL.md`](PROTOCOL.md) is frozen** (v1.1.0, hash `7e944f76f4318d54`; v1.0.0 was `7daf22d45cd62116` and produced every yolo26n
+> number below — v1.1.0 only *adds* the cross-model and padding analysis plans). Every
 > threshold, the exact prediction↔GT matching rule, and every deviation from Manfredi &
 > Wang are pinned there before results are read. `shifteq/protocol.py` is its
 > machine-readable twin, `tests/test_protocol_frozen.py` fails if the two drift, and every
@@ -62,7 +81,7 @@ python3 -m venv venv && . venv/bin/activate
 pip install -r requirements.txt
 
 make setup     # COCO val2017 images + labels + instances_val2017.json (~2.5 GB)
-make test      # 72 unit tests -- no GPU, no dataset, no weights needed, ~5 s
+make test      # 87 unit tests -- no GPU, no dataset, no weights needed, ~10 s
 ```
 
 Point Ultralytics at the dataset once (the setup script prints the exact command):
@@ -100,7 +119,8 @@ make oracle-budget   # times one AP evaluation and extrapolates K x (M+1)^2 x N
 # genuine small-object oracle (its own full K x S x N pass -- not free)
 python scripts/04_oracle.py --run-id yolo26n_e2e_m1s1_full_pad114 --area small
 
-# padding ablation: 114 (default), 0, -1 replicate, -2 reflect
+# padding ablation: does removing the constant-border position cue remove the periodicity?
+# 114 gray (protocol) / 0 black / -1 replicate / -2 reflect
 make pad-ablation
 
 # Manfredi & Wang Table 2: the max-shift ladder M in {1,3,7,15} on 100 images
@@ -109,10 +129,10 @@ make m-ladder
 # numerics control -- the floor for the instance-level metrics
 python scripts/08_numerics_control.py --subset 1000
 
-# cross-checks against other detectors
-python scripts/03_build_cache.py --model yolov8n  --head nms --max-shift 1 --step 1
-python scripts/03_build_cache.py --model yolov10n --head e2e --max-shift 1 --step 1
-python scripts/03_build_cache.py --model yolo11n  --head nms --max-shift 1 --step 1
+# cross-model check: Gate A first, then the sweeps, then the comparison (~5.5 h on an A10)
+make phase0-cross
+make crosscheck-sweeps
+make crosscheck
 ```
 
 ### Script map
@@ -139,6 +159,8 @@ python scripts/03_build_cache.py --model yolo11n  --head nms --max-shift 1 --ste
 | `09_cache_benefit.py` | what the preprocessing cache is worth (measured: 1.01×) |
 | `10_sweep1d_fft.py` | 1-D sweep at 1-px resolution + spectral test for grid-locking |
 | `11_head_gap.py` | the gate: grid-locked? measurable head gap? + FFT figure |
+| `12_crosscheck.py` | is grid-locking universal? does the head gap replicate on YOLOv10-N? |
+| `13_pad_ablation.py` | aliasing or border-reading? padding value vs the spectrum |
 
 ---
 
@@ -156,9 +178,31 @@ Oracle envelope, M = 1, full validation set:
 | one-to-one (NMS-free) | 40.25 | 38.18 | 41.94 | **3.76** | 52.37 | 59.33 | **6.96** |
 | one-to-many (NMS)     | 40.90 | 39.23 | 42.48 | **3.25** | 53.96 | 60.04 | **6.08** |
 
-**The NMS-free path is less shift-equivariant: +16% ΔAP, +14% ΔAP50.** It also starts from
+> **Corrected 2026-08-17.** These AP values were recomputed after a review found that
+> `TorchAccumulator` on CUDA evaluated `tpc / npig` with a Python-int divisor, which lowers
+> to a reciprocal multiply — one ULP below true division. COCO's 101 recall thresholds are
+> exact decimals, so categories whose `npig` puts `m/npig` *on* a threshold (npig=55 gives
+> 11/55 = 0.2) had their interpolation index flipped: 7 of 80 categories, ≈0.0013 AP per
+> evaluation. It nearly cancels in a difference, so ΔAP moved by <0.001 (e2e 3.7560→3.7555,
+> nms 3.2533→3.2537) — but the ratio sat on a rounding boundary and is now quoted as
+> **+15.4%**, where earlier versions said +16%. The greedy assignments are unchanged: a
+> 600-image probe found **0 argmax disagreements** between the two objectives, because a
+> constant offset cancels in the differences the search compares
+> (`results/oracle/*_greedy_flip_probe.json`). Pre-correction values are preserved in each
+> results file under `accumulator_correction`. Fix and regression tests: `shifteq/oracle.py`,
+> `tests/test_oracle.py`.
+
+**The NMS-free path is less shift-equivariant: +15.4% ΔAP, +14.5% ΔAP50.** It also starts from
 a lower clean AP, so it loses on both axes. 73% of images change their chosen shift under
 the greedy search, so the effect is broad, not a few outliers.
+
+**One caveat on ΔAP, stated because it is an imported assumption.** The greedy runs
+**K = 1** iteration ([`PROTOCOL.md` §4](PROTOCOL.md)), justified by Manfredi & Wang's report
+that further iterations move AP by <1%. That is a measurement on *their* detectors, and it
+was never checked on ours — the committed run shows `changed = 3641/5000` at iteration 0, so
+it hit the iteration cap rather than converging. K = 1 therefore gives a **lower bound** on
+ΔAP, which is conservative in the direction that protects the claim above, but it is an
+assumption rather than a result. A K = 2 run is queued.
 
 Against Manfredi & Wang's Table 1 (same metric, same M=1, same dataset):
 
@@ -353,6 +397,84 @@ ranges as lower bounds.**
 
 ---
 
+### 9. Cross-model check — is this about YOLO26, or about detectors?
+
+Two questions, two arms, reported separately because they have different answers.
+Pre-registered in [`PROTOCOL.md` §10](PROTOCOL.md) **before** any cross-model sweep ran.
+
+*Partial: YOLOv8-N, YOLO11-N and RT-DETR-L are still running. The replication arm below is
+complete.*
+
+#### 9a. Grid-locking is universal — 40 of 40 curves
+
+| arm | N | grid-locked | stride power | enrichment | AP at δ=0 |
+|---|---|---|---|---|---|
+| yolo26n e2e | 5000 | **10/10** | 0.70 | 4.5× | 40.29 |
+| yolo26n nms | 5000 | **10/10** | 0.70 | 4.5× | 40.89 |
+| YOLOv10-N e2e | 5000 | **10/10** | 0.72 | 4.6× | 38.47 |
+| YOLOv10-N nms | 5000 | **10/10** | 0.75 | 4.8× | 39.53 |
+
+A second checkpoint, a different training recipe, and the same spectral signature at the
+same enrichment. Finding 2 is not a YOLO26 artefact.
+
+#### 9b. The head gap did **not** replicate
+
+| checkpoint | e2e less stable | nms less stable | n.s. |
+|---|---|---|---|
+| yolo26n | **4**/10 | 1/10 | 5 |
+| YOLOv10-N | **0**/10 | 2/10 | 8 |
+
+Sign agreement across the two checkpoints: **4/10** — below
+the 5/10 expected if the two were unrelated.
+
+The pre-registered primary curve, `x/AP_small`, chosen because it carried yolo26n's largest
+effect:
+
+| checkpoint | e2e mean\|dev\| | nms mean\|dev\| | Δ | p | verdict |
+|---|---|---|---|---|---|
+| yolo26n | 0.3628 | 0.1930 | **+0.1697** | **<0.0001** | e2e worse |
+| YOLOv10-N | 0.1651 | 0.1991 | -0.0340 | 0.0785 | n.s., **opposite sign** |
+
+§10.1 defines a failed replication as *"the primary curve not significant, or significant in
+the opposite direction."* This is both. **We do not get to reinterpret that after the fact** —
+that is the entire purpose of having written it down first.
+
+#### What this does and does not license
+
+It does **not** show the head effect is absent. The uniform-shift curve is the weakest of
+this project's three instruments, and we said so before running it: it averages over a
+single shift applied to every image, which cannot see per-image variation that is
+uncorrelated across the dataset. On yolo26n the effect was **3× larger** in the oracle
+envelope (ΔAP 3.76 vs 3.25) and larger still in the instance metrics (dropout 46.5% vs
+28.8%). **Neither has been run on YOLOv10-N yet** — both are queued.
+
+It does **not** show the yolo26n result was a fluke either. Five of ten curves reached
+significance there against 0.5 expected by chance, at N=5000.
+
+What it does establish is that **finding 1 is currently a claim about one checkpoint.**
+Three readings remain open, and the queued runs discriminate between them:
+
+1. the effect is real but specific to YOLO26's head or training recipe (STAL, ProgLoss);
+2. the effect is general but the uniform-shift instrument is too blunt to see it on a model
+   whose overall dispersion is ~1.5× lower (YOLOv10-N sits at cv 0.132% vs yolo26n's 0.215%);
+3. the yolo26n uniform-shift result is a false positive, and the oracle/instance findings
+   rest on the other two instruments.
+
+If the oracle on YOLOv10-N also shows no gap, reading 1 or 3 is right and the paper's claim
+must narrow to YOLO26. If it reproduces yolo26n's gap, reading 2 is right and the
+uniform-shift curve should be demoted in the write-up.
+
+#### A side observation worth keeping
+
+**Both YOLOv10-N heads are markedly more shift-stable than either yolo26n head** — relative
+dispersion cv 0.132% / 0.146% against 0.215% / 0.218% (p ≤ 0.005, paired, relative). The newer,
+more accurate model is the *less* stable one. That is the decorrelation of accuracy and
+stability that motivated this study, showing up between models rather than within one.
+
+![cross-model comparison](results/figures/crosscheck_v10.png)
+
+---
+
 ## Method
 
 ### Two metric families, never mixed
@@ -410,7 +532,7 @@ original image --[Ultralytics val letterbox]--> 640 x 640
 * the canvas is stride-aligned and **constant across shifts**, so the anchor grid never
   changes shape — only the content moves;
 * two embedding modes, both strictly no-crop: `grow` (frozen default — letterbox to 640,
-  canvas 672; full resolution, but a non-validated input size, measured at +0.225 AP) and
+  canvas 672; full resolution, but a non-validated input size, costing +0.03/+0.07 AP) and
   `fit` (letterbox to 609, canvas 640; the validated input size at ~5% less resolution).
   Select with `--embed-mode`; see [`PROTOCOL.md` §1](PROTOCOL.md) for the deviations from
   Manfredi & Wang, including gray-114 fill rather than black;
@@ -490,6 +612,57 @@ square-vs-rect gap is **4× larger for the one-to-one head** (+0.21) than the on
 head (+0.05): the heads already disagree about what gray padding costs them, before any
 shift is applied.
 
+#### Gate A for the cross-check models
+
+No model's shift behaviour is quoted before it reproduces its published COCO AP — otherwise
+"this detector is unstable" could just be a loading bug. `make phase0-cross`:
+
+| model | head | ours | published | Δ | gate |
+|---|---|---|---|---|---|
+| YOLOv8-N | nms | 37.391 | 37.3 | **+0.091** | pass |
+| YOLO11-N | nms | 39.421 | 39.5 | **−0.079** | pass |
+| YOLOv10-N | e2e | 38.477 | 38.5 | **−0.023** | pass |
+| YOLOv10-N | nms | 39.464 | — | — | no published target |
+| RT-DETR-L | e2e | 52.766 | 53.0 | **−0.234** | see below |
+
+**YOLOv10-N's one-to-many branch has no published number.** It ships in the checkpoint but
+was never tabulated, so it is measured without a target. Its accuracy head gap is
+**+0.987 AP** (nms − e2e), close to yolo26n's **+0.77** — the same trade, on a different
+checkpoint.
+
+**RT-DETR-L misses the 0.1 tolerance, and the reason is upstream.** Its published 53.0 is the
+RT-DETR-R50 number from the original paper's *PaddlePaddle* evaluation, which Ultralytics
+quotes for their PyTorch port rather than re-measuring. The 52.766 above is Ultralytics'
+own validator on Ultralytics' own checkpoint, and a protocol ladder
+(`results/phase0/rtdetr_protocol_probe.json`) shows the residual is not a threshold
+artefact — the model emits exactly 300 queries, all scoring above 0.001, so AP is
+**identical** at `conf` ∈ {0.001, 0} and `max_det` ∈ {300, 1000}:
+
+| conf | max_det | AP |
+|---|---|---|
+| 0.001 | 300 | 52.766 |
+| 0 | 300 | 52.766 |
+| 0 | 1000 | 52.766 |
+| 0.001 | 100 | 52.584 |
+
+Its gate tolerance is therefore declared as 0.3 in `PROTOCOL.md §10.3` rather than loosened
+silently, and **no absolute-AP claim is made from that arm** — it contributes only to the
+universality question, which is about the *shape* of AP(δ), not its level. A preprocessing
+mistake would cost whole AP points, not a quarter of one.
+
+#### One upstream bug had to be fixed to run RT-DETR at all
+
+`RTDETRDecoder` caches its anchor grid and validity mask as **plain attributes**, keyed on
+the feature-map shapes. `nn.Module.to()` moves parameters and registered buffers, not plain
+attributes — and Ultralytics runs a CPU forward at 640×640 inside
+`get_flops_with_torch_profiler` while printing the model summary, *before* the model reaches
+the GPU. The cache is populated on CPU with exactly the shapes validation will use, the
+regeneration branch is skipped, and the first CUDA forward dies with `Expected all tensors
+to be on the same device`. `shifteq.modelzoo.fix_rtdetr_anchor_cache` sets `dynamic`, which
+rebuilds the grid per forward from `feats.device`. It is a cache-invalidation flag, not a
+numerics change: the regenerated tensors are the ones the cache was supposed to hold.
+Reproduced and verified on ultralytics 8.4.120 / torch 2.13.
+
 ### Gate B — the harness is a faithful, invertible wrapper
 
 | gate | assertion | result |
@@ -500,7 +673,7 @@ shift is applied.
 | B3 determinism | two runs of the same δ produce byte-identical detections | pass |
 | B4 evaluator agreement | our COCO AP == faster-coco-eval on the same predictions | **1.1e-16** |
 | B5 no fusion | BatchNorms intact, both branches present, weights unchanged across head switch | 114 BN, fingerprint stable |
-| B6 canvas effect | measured, **not** asserted — see below | +0.225 AP |
+| B6 canvas effect | measured, **not** asserted — see below | +0.029 e2e / +0.068 nms (full val) |
 
 ### Read this before quoting "δ=(0,0) reproduces the baseline bit-exactly"
 
@@ -514,8 +687,10 @@ True for exactly one configuration, false for the one you will actually run:
   convolutions see different context and the anchor grid is 84×84 instead of 80×80.
   Demanding bit-exactness there is demanding that padding have no effect — which is
   precisely the hypothesis the padding ablation exists to test. B6 therefore *measures*
-  `AP(canvas=672, δ=0) − AP(canvas=640)` and reports it as a result (+0.225 AP overall,
-  −0.065 on small objects).
+  `AP(canvas=672, δ=0) − AP(canvas=640)` and reports it as a result. **On the full
+  validation set that cost is +0.029 AP (e2e) and +0.068 (nms)** — the widely-quoted
+  "+0.225" is the e2e value from B6's 500-image probe and did not survive the full set,
+  which is what a 500-image AP estimate should be expected to do.
 
 What is bit-exact in **every** configuration is the geometry: preprocessing (B1) and the
 de-shift inverse map (B2/B2b). With those pinned, any residual difference between shifts is
@@ -603,8 +778,8 @@ shifteq/
   tta.py        shift test-time augmentation, three merge strategies
   pipeline.py   worker pool: GPU inference for δ_{k+1} overlaps CPU eval of δ_k
   spectrum.py   power spectrum of AP(δ), permutation nulls, parity statistic
-scripts/        00 setup .. 11 head gap
-tests/          72 tests; run on a laptop with no GPU, dataset, or weights
+scripts/        00 setup .. 13 padding ablation
+tests/          79 tests; run on a laptop with no GPU, dataset, or weights
 PROTOCOL.md     the frozen pre-registration -- read this first
 results/        committed outputs of the runs reported above
 ```
@@ -616,6 +791,12 @@ Every run writes a manifest recording the weights SHA-256, a state-dict fingerpr
 
 * ΔAP is only comparable across runs with the same `M` and the same `N`. The envelope
   widens mechanically with the number of shifts per image.
+* **Flicker, dropout and class-flip carry the same constraint**, for the same reason: each
+  is an existence claim over the grid ("not constant", "missed at ≥ 1 shift"), so all three
+  are monotone non-decreasing in the number of shifts sampled. Compare them only across runs
+  with the same grid — `results/stability.csv` shows the same model/head at 48.5% flicker on
+  1024 shifts and 39.2% on 256. Box jitter and the Stability Index are averages over
+  observed shifts, not existence claims, and do not have this problem.
 * The sweep numbers are on 1000 images (the oracle uses all 5000); step-2 grids
   underestimate the AP range by ~18%, so quote them as lower bounds.
 * `summary_at_assignment` reports AP_s/m/l at the assignment that maximised overall AP50.

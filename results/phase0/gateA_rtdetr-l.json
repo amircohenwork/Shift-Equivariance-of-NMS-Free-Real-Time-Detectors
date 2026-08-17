@@ -1,0 +1,59 @@
+{
+  "data": "coco.yaml",
+  "failures": [
+    "e2e: got 52.775, published 53.0, delta -0.225 > tol 0.1"
+  ],
+  "fuse_probe": {
+    "applicable": false,
+    "reason": "single-head checkpoint: no one-to-one branch to fuse against"
+  },
+  "gate_pass": false,
+  "gate_rect": true,
+  "harness_baseline": {
+    "e2e": {
+      "mAP50": 71.25440469971628,
+      "mAP50-95": 52.77514824293959,
+      "mAP75": 57.17028269201574,
+      "mAP_large": 70.79945142092916,
+      "mAP_medium": 57.37991374850975,
+      "mAP_small": 34.416849220011905,
+      "minus_gate_protocol": 0.0
+    }
+  },
+  "heads": {
+    "e2e": {
+      "coco": {
+        "mAP50": 71.25440469971628,
+        "mAP50-95": 52.77514824293959,
+        "mAP75": 57.17028269201574,
+        "mAP_large": 70.79945142092916,
+        "mAP_medium": 57.37991374850975,
+        "mAP_small": 34.416849220011905
+      },
+      "conf": 0.001,
+      "delta": -0.2248517570604065,
+      "iou": 0.7,
+      "mAP50-95": 52.77514824293959,
+      "max_det": 300,
+      "pass": false,
+      "published": 53.0,
+      "quantize": null,
+      "rect": true,
+      "save_dir": "/home/student/runs/detect/val-41",
+      "ultralytics_internal": {
+        "mAP50": 70.68394604118528,
+        "mAP50-95": 52.29767647794497
+      }
+    }
+  },
+  "imgsz": 640,
+  "model": "rtdetr-l",
+  "published": {
+    "e2e": 53.0
+  },
+  "tol": 0.1,
+  "torch": "2.13.0+cu126",
+  "ultralytics": "8.4.120",
+  "weights": "rtdetr-l.pt",
+  "weights_sha256": "6de60b10d4bc566f00cda0f5b4d64afe4b66d48dc9695d2171effb7859d8e73f"
+}

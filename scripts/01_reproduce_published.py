@@ -11,6 +11,12 @@ Targets for yolo26n (Ultralytics model card / arXiv:2606.03748 Tab. 7):
     one-to-one  (e2e)   mAP50-95 = 40.1
 Gate: both within --tol (default 0.1) AP.
 
+`--model` also drives the cross-check arm (yolov8n / yolov10n / yolo11n / rtdetr-l): the
+same gate has to pass for every model whose shift behaviour we intend to quote, otherwise
+a "this detector is unstable" claim could just be a loading bug. Heads with no published
+number -- YOLOv10's one-to-many branch is in the checkpoint but was never tabulated -- are
+measured and reported without a pass/fail.
+
 The published protocol is `rect=True`
 -------------------------------------
 `cfg/default.yaml` says `rect: False` but comments "rectangular batching for val when
@@ -84,25 +90,53 @@ def coco_eval_json(pred_json: str, ann_json: str, image_ids=None) -> dict:
     }
 
 
+def _handle(weights: str, spec):
+    """RT-DETR must not be driven through `YOLO`.
+
+    `guess_model_task` reports "detect" for an RTDETRDetectionModel, so `YOLO(...)` builds
+    a plain `DetectionValidator` over a `YOLODataset` -- i.e. it would *letterbox* the
+    images. RT-DETR's own validator uses `RTDETRDataset`, whose `load_image(rect_mode=False)`
+    stretches to a square instead. Evaluating RT-DETR under the wrong preprocessing family
+    silently costs AP and would make its Gate A fail for a reason that has nothing to do
+    with this study.
+    """
+    if spec.preproc == "stretch":
+        from ultralytics import RTDETR
+
+        return RTDETR(weights)
+    from ultralytics import YOLO
+
+    return YOLO(weights)
+
+
 def val_one(weights: str, head: str, data: str, imgsz: int, batch: int, device: str,
             workers: int, ann_json: str, max_det: int = 300, quantize=None,
-            conf: float = 0.001, iou: float = 0.7, rect: bool = False) -> dict:
+            conf: float = 0.001, iou: float = 0.7, rect: bool = False, spec=None) -> dict:
     """One head, one fresh model handle.
 
     Fresh on purpose: `model.val(end2end=True)` routes through AutoBackend(fuse=True), and
     BaseModel.fuse() calls Detect.fuse() on an end-to-end head, which sets
     `cv2 = cv3 = None` -- it deletes the one-to-many branch from the live object.
     """
-    from ultralytics import YOLO
+    model = _handle(weights, spec)
+    # See shifteq.modelzoo.fix_rtdetr_anchor_cache: without this, RT-DETR's first CUDA
+    # forward inside the validator raises a device mismatch. `model.model` is the same
+    # object AutoBackend will wrap, so the flag survives into validation.
+    from shifteq.modelzoo import fix_rtdetr_anchor_cache
 
-    model = YOLO(weights)
+    fix_rtdetr_anchor_cache(model.model)
+    kw = {}
+    if spec is None or spec.preproc != "stretch":
+        # RT-DETR has no end2end switch (set prediction is its only path) and Ultralytics
+        # would just warn; don't send it a knob it does not have.
+        kw["end2end"] = head == "e2e"
     m = model.val(
         data=data, imgsz=imgsz, batch=batch, device=device, workers=workers,
         conf=conf, iou=iou, max_det=max_det,
         rect=rect,           # False = square letterbox, the documented val default
         quantize=quantize,   # None = fp32; 16 = fp16
         save_json=True, plots=False, verbose=False,
-        end2end=(head == "e2e"),
+        **kw,
     )
     save_dir = Path(m.save_dir)
     pj = save_dir / "predictions.json"
@@ -121,20 +155,29 @@ def val_one(weights: str, head: str, data: str, imgsz: int, batch: int, device: 
 def probe_fuse_destroys_o2m(weights: str, device: str) -> dict:
     """Demonstrate, on this exact package version, that fusing an end2end model removes
     the one-to-many head. If a future release changes this, we want the run manifest to
-    say so rather than silently relying on a stale assumption."""
+    say so rather than silently relying on a stale assumption.
+
+    Only dual-head checkpoints can exhibit the failure, so single-head models report
+    "not applicable" instead of a misleading False.
+    """
     from ultralytics.nn.modules.head import Detect
     from ultralytics.nn.tasks import load_checkpoint
 
     from shifteq.modelzoo import resolve_device
 
     net, _ = load_checkpoint(weights, device=resolve_device(device), fuse=False)
-    head = [m for m in net.modules() if isinstance(m, Detect)][-1]
+    heads = [m for m in net.modules() if isinstance(m, Detect)]
+    if not heads or not hasattr(heads[-1], "one2one_cv2"):
+        return {"applicable": False,
+                "reason": "single-head checkpoint: no one-to-one branch to fuse against"}
+    head = heads[-1]
     before = head.cv2 is not None and head.cv3 is not None
     net.end2end = True
     net.fuse(verbose=False)
     head = [m for m in net.modules() if isinstance(m, Detect)][-1]
     after = head.cv2 is not None and head.cv3 is not None
-    return {"one2many_before_fuse": bool(before), "one2many_after_fuse": bool(after),
+    return {"applicable": True,
+            "one2many_before_fuse": bool(before), "one2many_after_fuse": bool(after),
             "fuse_destroys_one2many": bool(before and not after)}
 
 
@@ -146,18 +189,30 @@ def main():
     ap.add_argument("--batch", type=int, default=32)
     ap.add_argument("--device", default="0")
     ap.add_argument("--workers", type=int, default=8)
-    ap.add_argument("--tol", type=float, default=0.1, help="AP tolerance for the gate")
+    ap.add_argument("--tol", type=float, default=None,
+                    help="AP tolerance for the gate; default is the per-model "
+                         "ModelSpec.gate_tol (0.1 unless the published number came "
+                         "from a different codebase)")
     ap.add_argument("--ann", default=None, help="instances_val2017.json (default: from data yaml)")
     ap.add_argument("--probe", action="store_true",
                     help="also sweep max_det/precision to explain any residual gap")
     ap.add_argument("--gate-rect", type=lambda v: v.lower() != "false", default=True,
                     help="protocol the gate is checked against (published table is rect=True)")
-    ap.add_argument("--out", default="results/phase0/gateA_reproduce.json")
+    ap.add_argument("--out", default=None,
+                    help="default: results/phase0/gateA_reproduce.json for yolo26n, "
+                         "results/phase0/gateA_<model>.json for the cross-checks")
     args = ap.parse_args()
+    if args.out is None:
+        args.out = ("results/phase0/gateA_reproduce.json" if args.model == "yolo26n"
+                    else f"results/phase0/gateA_{args.model}.json")
 
     setup_logging()
     set_deterministic(0)
     spec = MODELS[args.model]
+    tol = spec.gate_tol if args.tol is None else args.tol
+    if tol != 0.1:
+        LOGGER.warning(f"gate tolerance is {tol} AP, not the usual 0.1 -- "
+                       f"published number source: {spec.published_source}")
 
     import torch
     import ultralytics
@@ -180,7 +235,8 @@ def main():
         "data": args.data,
         "imgsz": args.imgsz,
         "published": spec.published_map,
-        "tol": args.tol,
+        "tol": tol,
+        "published_source": spec.published_source,
         "heads": {},
         "fuse_probe": probe_fuse_destroys_o2m(str(wpath), args.device),
     }
@@ -192,15 +248,15 @@ def main():
     for head in spec.heads:
         LOGGER.info(f"=== validating {spec.name} head={head} (gate protocol rect={args.gate_rect}) ===")
         r = val_one(str(wpath), head, args.data, args.imgsz, args.batch, args.device,
-                    args.workers, str(ann), rect=args.gate_rect)
+                    args.workers, str(ann), rect=args.gate_rect, spec=spec)
         target = spec.published_map.get(head)
         r["published"] = target
         if target is not None:
             r["delta"] = r["mAP50-95"] - target
-            r["pass"] = abs(r["delta"]) <= args.tol
+            r["pass"] = abs(r["delta"]) <= tol
             if not r["pass"]:
                 failures.append(f"{head}: got {r['mAP50-95']:.3f}, published {target}, "
-                                f"delta {r['delta']:+.3f} > tol {args.tol}")
+                                f"delta {r['delta']:+.3f} > tol {tol}")
         report["heads"][head] = r
         LOGGER.info(
             f"  {head}: COCO mAP50-95={r['coco']['mAP50-95']:.3f} "
@@ -209,10 +265,15 @@ def main():
             f"| delta {r.get('delta', float('nan')):+.3f}"
         )
 
-        # The square-letterbox number is what the shift harness has to reproduce.
-        b = val_one(str(wpath), head, args.data, args.imgsz, args.batch, args.device,
-                    args.workers, str(ann), rect=False)
-        report["harness_baseline"][head] = b["coco"]
+        # The square-letterbox number is what the shift harness has to reproduce. For the
+        # stretch family the two protocols are the same run -- RTDETRValidator.build_dataset
+        # hardcodes rect=False -- so re-running it would only burn GPU time.
+        if spec.preproc == "stretch" or not args.gate_rect:
+            b = r
+        else:
+            b = val_one(str(wpath), head, args.data, args.imgsz, args.batch, args.device,
+                        args.workers, str(ann), rect=False, spec=spec)
+        report["harness_baseline"][head] = dict(b["coco"])  # copy: b may alias r
         report["harness_baseline"][head]["minus_gate_protocol"] = (
             b["coco"]["mAP50-95"] - r["coco"]["mAP50-95"]
         )
@@ -224,7 +285,14 @@ def main():
 
     if {"e2e", "nms"} <= set(report["heads"]):
         report["head_gap_ours"] = report["heads"]["nms"]["mAP50-95"] - report["heads"]["e2e"]["mAP50-95"]
-        report["head_gap_published"] = spec.published_map["nms"] - spec.published_map["e2e"]
+        if {"e2e", "nms"} <= set(spec.published_map):
+            report["head_gap_published"] = spec.published_map["nms"] - spec.published_map["e2e"]
+        else:
+            # YOLOv10 publishes only the one-to-one number; its one-to-many branch exists in
+            # the checkpoint but was never tabulated, so we measure it without a target.
+            report["head_gap_published"] = None
+        LOGGER.info(f"accuracy head gap (nms - e2e): {report['head_gap_ours']:+.3f} AP "
+                    f"(published {report['head_gap_published']})")
 
     if args.probe:
         LOGGER.info("=== sensitivity probe: which knob explains the gap? ===")
@@ -234,7 +302,7 @@ def main():
                               ("fp16", dict(quantize=16)),
                               ("conf0.01", dict(conf=0.01))):
                 r = val_one(str(wpath), head, args.data, args.imgsz, args.batch,
-                            args.device, args.workers, str(ann), **kw)
+                            args.device, args.workers, str(ann), spec=spec, **kw)
                 report["probe"][f"{head}/{label}"] = r["coco"]
                 LOGGER.info(f"  {head}/{label}: mAP50-95={r['coco']['mAP50-95']:.3f}")
 
@@ -248,7 +316,12 @@ def main():
         for f in failures:
             LOGGER.error("  " + f)
         sys.exit(1)
-    LOGGER.info("GATE A PASSED: both published numbers reproduced within tolerance.")
+    checked = [h for h in spec.heads if spec.published_map.get(h) is not None]
+    unchecked = [h for h in spec.heads if h not in checked]
+    msg = f"GATE A PASSED: {len(checked)}/{len(spec.heads)} head(s) reproduced within tolerance"
+    if unchecked:
+        msg += f"; {unchecked} have no published number and were measured only"
+    LOGGER.info(msg + ".")
 
 
 if __name__ == "__main__":

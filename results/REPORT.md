@@ -4,9 +4,16 @@
 | gate | pass | detail |
 |---|---|---|
 | ap_noise_floor | None | "" |
+| cache_benefit | None | "" |
+| cache_benefit_w1 | None | "" |
+| cache_benefit_w2 | None | "" |
 | detection_diff_nms | None | "" |
 | fusion_delta | None | "" |
 | gateA_reproduce | True | [] |
+| gateA_rtdetr-l | False | ["e2e: got 52.775, published 53.0, delta -0.225 > tol 0.1"] |
+| gateA_yolo11n | True | [] |
+| gateA_yolov10n | True | [] |
+| gateA_yolov8n | True | [] |
 | gateB_harness | True | {"B1_preproc_identity": true, "B2_deshift_roundtrip": true, "B2b_map_equivariance": true, "B3_determinism": tr |
 | gateB_harness_nms | True | {"B1_preproc_identity": true, "B2_deshift_roundtrip": true, "B2b_map_equivariance": true, "B3_determinism": tr |
 | gateB_identity_fullval | False | ["e2e: ours 40.220 vs Ultralytics square 40.255, delta -0.034 > tol 0.02", "nms: ours 40.834 vs Ultralytics sq |
@@ -14,6 +21,7 @@
 | numerics_control | None | "" |
 | numerics_probe_nms | None | "" |
 | protocol_probe | None | "" |
+| rtdetr_protocol_probe | None | "" |
 | topk_probe | None | "" |
 
 ## Table 1 - Oracle envelope (Manfredi & Wang dAP)

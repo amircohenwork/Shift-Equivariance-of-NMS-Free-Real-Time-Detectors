@@ -78,7 +78,12 @@ def collect_sweep(d: Path) -> tuple[list[dict], list[dict]]:
         s = r.get("stability")
         if s:
             stab.append({
-                "model": r["model"], "head": r["head"], "tau": s["tau"], "n_gt": s["n_gt"],
+                # run_id/N/step are what make a row identifiable. Without them the n=100
+                # dense control and the n=1000 sweep appear as two `yolo26n,e2e,0.25` rows
+                # that a reader can only tell apart by guessing from `n_gt`.
+                "run_id": r["run_id"], "model": r["model"], "head": r["head"],
+                "N": r["n_images"], "step": r["step"], "shifts": r["n_shifts"],
+                "tau": s["tau"], "n_gt": s["n_gt"],
                 "flicker": s["flicker_rate"] * 100, "dropout": s["dropout_rate"] * 100,
                 "class_flip": s["class_flip_rate"] * 100, "jitter_px": s["jitter_px"],
                 "jitter_rel": s["jitter_rel"],

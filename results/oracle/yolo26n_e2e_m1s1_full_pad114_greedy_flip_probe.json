@@ -1,0 +1,12 @@
+{
+  "bug_magnitude_AP50": 9.6e-06,
+  "flip_rate": 0.0,
+  "n_flips": 0,
+  "n_probed": 600,
+  "run": "yolo26n_e2e_m1s1_full_pad114",
+  "top2_margin_AP50": {
+    "median": 2.1076095585992327e-06,
+    "min": 0.0,
+    "p05": 1.8105824134417866e-08
+  }
+}

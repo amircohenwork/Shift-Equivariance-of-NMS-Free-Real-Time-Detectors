@@ -167,18 +167,34 @@ def parity_effect(values: np.ndarray, n_permutations: int = 20000, seed: int = 0
 
 
 def stride_report(spec: Spectrum, strides=NETWORK_STRIDES) -> dict:
-    """Power and significance at each network stride -- the headline table."""
+    """Power and significance at each network stride -- the headline table.
+
+    Bins are deduplicated before the total is taken. `at_period` snaps to the *closest*
+    bin, and on a short sweep several strides snap to the same one -- at 4 sample points,
+    periods 4, 8, 16 and 32 are all one bin -- so summing per stride would count that bin
+    four times and report a "power fraction" above 1. The protocol sweep uses 64 points,
+    where periods 2/4/8/16/32 land on distinct bins 32/16/8/4/2 and dedup is a no-op, so no
+    published number changes; this matters for anyone re-running at another `max_shift`.
+    `expected_by_chance` counts the same unique bins, so enrichment stays a like-for-like
+    ratio.
+    """
     out = {"peak": spec.peak(), "strides": {}}
     for s in strides:
         out["strides"][str(s)] = spec.at_period(s)
-    total = float(sum(out["strides"][str(s)]["power_frac"] for s in strides))
+    unique_bins = {out["strides"][str(s)]["bin"]: out["strides"][str(s)]["power_frac"]
+                   for s in strides}
+    total = float(sum(unique_bins.values()))
     out["stride_power_total"] = total
-    out["stride_bins"] = len(strides)
+    out["stride_bins"] = len(unique_bins)
+    out["stride_bins_requested"] = len(strides)
+    if len(unique_bins) < len(strides):
+        out["note"] = (f"{len(strides)} strides collapsed onto {len(unique_bins)} FFT bins "
+                       f"at N={len(spec.values)}; the sweep is too short to separate them")
     # Fraction of spectrum these bins would hold if power were spread uniformly. With 64
     # samples there are 32 non-DC bins, so 5 stride bins is ~16% by chance alone; the
     # threshold has to beat that, not zero.
     n_bins = max(len(spec.power) - 1, 1)
-    out["expected_by_chance"] = len(strides) / n_bins
+    out["expected_by_chance"] = len(unique_bins) / n_bins
     out["enrichment"] = total / out["expected_by_chance"] if out["expected_by_chance"] else 0.0
     out["min_stride_p_uncorrected"] = min(out["strides"][str(s)]["p_value"] for s in strides)
     out["p_stride_fwer"] = float(spec.p_stride_fwer)
@@ -188,6 +204,55 @@ def stride_report(spec: Spectrum, strides=NETWORK_STRIDES) -> dict:
         else "broadband / not clearly stride-periodic"
     )
     return out
+
+
+def dispersion(values: np.ndarray) -> dict:
+    """How much a curve wobbles -- in AP points, and relative to its own level.
+
+    The relative form exists for the cross-model table. RT-DETR sits at 53 AP and YOLOv8-N
+    at 37, so "RT-DETR's curve moves by more AP points" would be partly a statement about
+    where the models are on the AP scale, not about how shift-stable they are. Quoting the
+    coefficient of variation alongside the absolute number keeps that distinction visible.
+    """
+    v = np.asarray(values, dtype=np.float64)
+    mean = float(v.mean())
+    mad = float(np.abs(v - mean).mean())
+    return {"mean": mean, "mean_abs_dev": mad, "std": float(v.std(ddof=1)),
+            "range": float(v.max() - v.min()), "min": float(v.min()), "max": float(v.max()),
+            "cv_percent": 100.0 * mad / mean if mean else float("nan")}
+
+
+def paired_dispersion_test(a: np.ndarray, b: np.ndarray, n_perm: int = 20000, seed: int = 0,
+                           relative: bool = False) -> dict:
+    """Is curve `a` more dispersed than curve `b`, paired by shift position?
+
+    Statistic: mean over deltas of (|a - mean(a)| - |b - mean(b)|). Null: the sign of each
+    per-delta difference is exchangeable, which is what "the two curves are equally stable"
+    implies once each is centred on its own mean. Pairing matters -- both curves were
+    measured on the same images at the same deltas, so some deltas are simply hard for
+    everything, and an unpaired test would count that shared difficulty as signal.
+
+    `relative=True` divides each curve's deviations by its own mean first, which is the
+    right comparison when the two curves sit at different AP levels (cross-model), and the
+    wrong one when they do not (two heads of one checkpoint, where the AP levels are within
+    a point of each other and the absolute cost is what a practitioner pays).
+    """
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    da = np.abs(a - a.mean())
+    db = np.abs(b - b.mean())
+    if relative:
+        da = da / a.mean() * 100.0
+        db = db / b.mean() * 100.0
+    d = da - db
+    obs = float(d.mean())
+    rng = np.random.default_rng(seed)
+    signs = rng.choice([-1.0, 1.0], size=(n_perm, len(d)))
+    null = (signs * d).mean(axis=1)
+    p = (np.sum(np.abs(null) >= abs(obs)) + 1.0) / (n_perm + 1.0)
+    return {"mean_abs_dev_a": float(da.mean()), "mean_abs_dev_b": float(db.mean()),
+            "difference": obs, "p_value": float(p), "n_perm": n_perm,
+            "relative": bool(relative)}
 
 
 def bootstrap_range_ci(per_image_ap: np.ndarray, n_boot: int = 2000, seed: int = 0,

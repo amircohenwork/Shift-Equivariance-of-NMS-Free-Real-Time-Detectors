@@ -67,7 +67,9 @@ def main():
 
     report = {"run_id": args.run_id, "model": man.model, "head": man.head,
               "max_shift": man.max_shift, "n_shifts": len(grid), "n_images": gt.num_images,
-              "iou": args.iou, "max_det": args.max_det, "results": {}}
+              "iou": args.iou, "max_det": args.max_det, "results": {},
+              # See DetStore.fingerprint: ties this result to the exact detections it read.
+              "detections": store.fingerprint()}
 
     base = evaluate_detections(gt, per_shift[0], cmi, npig_cache=npig)
     report["baseline_delta0"] = base

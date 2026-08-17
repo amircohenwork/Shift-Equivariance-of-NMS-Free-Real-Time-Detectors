@@ -1,13 +1,35 @@
 {
+  "accumulator_correction": {
+    "applied": "2026-08-17",
+    "note": "TorchAccumulator on CUDA computed `tpc / npig` with a Python-int divisor, which lowers to a reciprocal multiply (one ULP below true division). COCO's 101 recall thresholds are exact decimals, so categories whose npig makes m/npig land on a threshold had their interpolation index flipped: 7 of 80 categories, ~0.0013 AP per evaluation. Fixed by dividing by a device tensor. AP recomputed here with NumpyAccumulator, which agrees with cocolite.evaluate_detections and hence with faster-coco-eval (gate B4) to 1.1e-16. Greedy assignments unchanged: 0/600 argmax disagreements in results/oracle/*_greedy_flip_probe.json.",
+    "values_before": {
+      "baseline": {
+        "AP": 0.402472934663914,
+        "AP50": 0.5592545536011843
+      },
+      "best_AP": 0.4193742612483899,
+      "best_AP50": 0.5933095049189554,
+      "delta": {
+        "AP50_best": 0.5933095049189554,
+        "AP50_worst": 0.5237411329450781,
+        "AP_best": 0.4193742612483899,
+        "AP_worst": 0.38181407852149457,
+        "dAP": 0.03756018272689532,
+        "dAP50": 0.06956837197387733
+      },
+      "worst_AP": 0.38181407852149457,
+      "worst_AP50": 0.5237411329450781
+    }
+  },
   "area": "all",
-  "backend": "torch",
+  "backend": "numpy (recomputed; search ran on torch/cuda)",
   "baseline": {
-    "AP": 0.402472934663914,
-    "AP50": 0.5592545536011843
+    "AP": 0.40248625888514217,
+    "AP50": 0.5592641858753435
   },
   "best": {
-    "AP": 0.4193742612483899,
-    "AP50": 0.5933095049189554,
+    "AP": 0.4193849627008626,
+    "AP50": 0.5933200232887154,
     "iterations": [
       {
         "AP": 0.4193742612483899,
@@ -34,12 +56,12 @@
   },
   "comparable_to_manfredi_wang": true,
   "delta": {
-    "AP50_best": 0.5933095049189554,
-    "AP50_worst": 0.5237411329450781,
-    "AP_best": 0.4193742612483899,
-    "AP_worst": 0.38181407852149457,
-    "dAP": 0.03756018272689532,
-    "dAP50": 0.06956837197387733
+    "AP50_best": 0.5933200232887154,
+    "AP50_worst": 0.5237586564964464,
+    "AP_best": 0.4193849627008626,
+    "AP_worst": 0.38183038896473603,
+    "dAP": 0.037554573736126584,
+    "dAP50": 0.06956136679226899
   },
   "head": "e2e",
   "iters": 1,
@@ -69,8 +91,8 @@
   ],
   "step": 1,
   "worst": {
-    "AP": 0.38181407852149457,
-    "AP50": 0.5237411329450781,
+    "AP": 0.38183038896473603,
+    "AP50": 0.5237586564964464,
     "iterations": [
       {
         "AP": 0.38181407852149457,

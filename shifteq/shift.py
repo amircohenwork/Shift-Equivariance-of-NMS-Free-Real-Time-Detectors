@@ -53,7 +53,8 @@ class ShiftGeometry:
     `grow`  letterbox to `imgsz`, embed in a canvas of align(imgsz + max_shift). Keeps the
             full letterbox resolution and stays byte-identical to the Ultralytics val
             dataloader, but shows the network a size it was not validated at (measured:
-            +0.225 AP at delta=0, gate B6).
+            +0.029 AP e2e / +0.068 nms at delta=0 on the full val set; gate B6's
+            500-image probe said +0.225 for e2e, which was mostly sampling noise).
 
     `fit`   letterbox to `imgsz - max_shift`, embed in a canvas of exactly `imgsz`. The
             network input is the validated size; the shift budget comes out of the image

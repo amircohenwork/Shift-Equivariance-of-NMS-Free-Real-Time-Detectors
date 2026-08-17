@@ -20,12 +20,24 @@ import hashlib
 import json
 from typing import Any
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 CHANGELOG = [
     ("1.0.0", "2026-08-15", "Initial freeze. Protocol under which all results in "
                             "results/ and README.md were produced."),
+    ("1.1.0", "2026-08-17", "Added CROSS_CHECK and PADDING. Both variations were already "
+                            "declared as intended in v1.0.0 (PROTOCOL.md section 9); this "
+                            "version specifies how they are analysed. Written after the "
+                            "yolo26n full-validation results were known and before any "
+                            "cross-model or padding sweep had been run. No v1.0.0 value "
+                            "changed, so every yolo26n number stands unaltered."),
 ]
+
+#: Hashes of superseded versions, so a run manifest recorded under an older protocol stays
+#: traceable after an amendment. `protocol_hash()` only ever describes the current version.
+PRIOR_HASHES = {
+    "1.0.0": "7daf22d45cd62116",
+}
 
 
 # --------------------------------------------------------------------------------------
@@ -36,7 +48,8 @@ SHIFT = {
     #         align(imgsz + max_shift, stride). Network input is LARGER than imgsz.
     #         Preserves full letterbox resolution and byte-identity with the Ultralytics
     #         val dataloader, at the cost of showing the network a size it was not
-    #         validated at (measured: +0.225 AP at delta=0, gate B6).
+    #         validated at (full val, delta=0: +0.029 AP e2e / +0.068 nms; the +0.225
+    #         quoted from gate B6's 500-image probe did not survive the full set).
     # "fit":  letterbox to (imgsz - max_shift), then embed in a canvas of exactly `imgsz`.
     #         Network input matches the validated size; costs a little resolution.
     #         Closer to Manfredi & Wang in spirit -- the shift budget comes out of the
@@ -182,6 +195,64 @@ TTA = {
 }
 
 
+# --------------------------------------------------------------------------------------
+# 10. Cross-model check                                                    (added v1.1.0)
+# --------------------------------------------------------------------------------------
+CROSS_CHECK = {
+    "primary_model": "yolo26n",
+    # The only other released checkpoint carrying a one-to-one and a one-to-many branch
+    # trained together, hence the one arm that can replicate the core ablation.
+    "replication_model": "yolov10n",
+    "universality_models": ["yolov8n", "yolo11n", "rtdetr-l"],
+    "n_images": 5000,
+    "max_shift": 63,
+    "step": 1,
+    # Declared in advance: the curve on which yolo26n showed its largest head effect.
+    # Everything else is secondary and reported as a count, not as ten separate claims.
+    "primary_curve": "x/AP_small",
+    "test": "paired sign-flip dispersion test across delta, absolute deviations",
+    "alpha": 0.05,
+    "permutations": 20000,
+    "failed_replication_means": "primary curve not significant, or significant with the "
+                                "opposite sign",
+    "cross_model_dispersion_reported_as": ["AP points", "coefficient of variation"],
+    "sign_agreement_is": "descriptive concordance, not a p-value (the curves are not "
+                         "independent of one another)",
+    "gate_a_tolerance_ap": 0.1,
+    "gate_a_exceptions": {
+        # Declared, not applied silently. See modelzoo.MODELS["rtdetr-l"].
+        "rtdetr-l": "0.3 -- the published 53.0 is the original paper's PaddlePaddle "
+                    "evaluation quoted for a PyTorch port, not an Ultralytics "
+                    "re-measurement; no absolute-AP claim is made from this arm",
+    },
+}
+
+# --------------------------------------------------------------------------------------
+# 11. Padding ablation                                                     (added v1.1.0)
+# --------------------------------------------------------------------------------------
+PADDING = {
+    "hypothesis": "Kayhan & van Gemert (CVPR'20): a constant border is an implicit "
+                  "absolute-position cue, which competes with aliasing as the explanation "
+                  "for the stride-periodic response",
+    "prediction_if_aliasing": "stride periodicity survives a non-constant border",
+    "prediction_if_border_cue": "stride periodicity weakens or disappears",
+    # The grouping IS the design: 0 controls for the constant's *value*, {-1,-2} remove
+    # its *constant-ness*. Comparing 114 against 0 alone decides nothing.
+    "constant_border_values": [114, 0],
+    "content_border_values": [-1, -2],
+    "value_meanings": {"114": "gray (frozen protocol)", "0": "black (Manfredi & Wang)",
+                       "-1": "replicate", "-2": "reflect"},
+    "sets_both_borders": "letterbox bars at cache build time AND canvas frame at embed time",
+    "n_images": 1000,
+    "baseline": 114,
+    "comparison": "relative dispersion (the padding moves the AP level, so absolute points "
+                  "would conflate 'wobbles less' with 'scores lower')",
+    # Pre-declared so a small difference cannot be read as a null result after the fact.
+    "underpowered_if_group_delta_within": 0.10,
+    "escalate_to_n_images": 5000,
+}
+
+
 ALL: dict[str, Any] = {
     "version": VERSION,
     "shift": SHIFT,
@@ -192,6 +263,8 @@ ALL: dict[str, Any] = {
     "matching": MATCHING,
     "stability_index": STABILITY_INDEX,
     "tta": TTA,
+    "cross_check": CROSS_CHECK,
+    "padding": PADDING,
 }
 
 

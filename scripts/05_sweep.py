@@ -84,6 +84,9 @@ def main():
                   for k, v in curve_stats(rows, key).items()},
         "note": ("AP_range here is the spread over UNIFORM shifts. It is not dAP: the oracle "
                  "envelope selects a shift per image and is systematically wider."),
+        # Only meaningful when detections came from a store; otherwise the provenance that
+        # matters is the weights + preprocessing, which the run manifest already records.
+        "detections": store.fingerprint() if store is not None else None,
     }
     if args.step == 1:
         report["subsample_fidelity"] = {str(s): subsample_fidelity(rows, s) for s in (2, 4)}

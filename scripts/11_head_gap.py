@@ -27,30 +27,10 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from shifteq.spectrum import NETWORK_STRIDES  # noqa: E402
+from shifteq.spectrum import NETWORK_STRIDES, paired_dispersion_test  # noqa: E402
 from shifteq.utils import LOGGER, read_json, setup_logging, write_json  # noqa: E402
 
 KEYS = ("AP", "AP50", "AP_small", "AP_medium", "AP_large")
-
-
-def paired_dispersion_test(a: np.ndarray, b: np.ndarray, n_perm: int = 20000,
-                           seed: int = 0) -> dict:
-    """Is curve `a` more dispersed than curve `b`, paired by shift position?
-
-    Statistic: mean over deltas of (|a - mean(a)| - |b - mean(b)|). Null: the sign of each
-    per-delta difference is exchangeable, which is what "the two heads are equally stable"
-    implies once each curve is centred on its own mean.
-    """
-    da = np.abs(a - a.mean())
-    db = np.abs(b - b.mean())
-    d = da - db
-    obs = float(d.mean())
-    rng = np.random.default_rng(seed)
-    signs = rng.choice([-1.0, 1.0], size=(n_perm, len(d)))
-    null = (signs * d).mean(axis=1)
-    p = (np.sum(np.abs(null) >= abs(obs)) + 1.0) / (n_perm + 1.0)
-    return {"mean_abs_dev_a": float(da.mean()), "mean_abs_dev_b": float(db.mean()),
-            "difference": obs, "p_value": float(p), "n_perm": n_perm}
 
 
 def figure(data: dict, out: Path) -> str | None:

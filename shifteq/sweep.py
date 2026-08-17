@@ -61,14 +61,21 @@ def run_sweep(
     `grid` overrides the default 2-D lattice, so a 1-D line sweep gets the same caching,
     resume and overlap behaviour rather than a parallel implementation.
     """
+    explicit_grid = grid is not None
     grid = shift_grid(max_shift, step) if grid is None else list(grid)
     out_jsonl = Path(out_jsonl)
     out_jsonl.parent.mkdir(parents=True, exist_ok=True)
     done = _rows(out_jsonl) if resume else {}
     npig = {a: npig_per_cat(gt, a) for a in areas}
 
+    # Describe the grid actually being run, not the default lattice parameters -- an
+    # explicit 1-D `grid` ignores max_shift/step, and logging them anyway reports
+    # "max=31, step=2" for a sweep that is really 0..63 at step 1.
+    extent = (f"explicit grid, dy {min(g[0] for g in grid)}..{max(g[0] for g in grid)}, "
+              f"dx {min(g[1] for g in grid)}..{max(g[1] for g in grid)}"
+              if explicit_grid else f"max={max_shift}, step={step}")
     LOGGER.info(
-        f"sweep: {len(grid)} shifts (max={max_shift}, step={step}) x {gt.num_images} images "
+        f"sweep: {len(grid)} shifts ({extent}) x {gt.num_images} images "
         f"= {len(grid) * gt.num_images:,} forwards; {len(done)} already done"
     )
     if done and stability is not None and store is None:

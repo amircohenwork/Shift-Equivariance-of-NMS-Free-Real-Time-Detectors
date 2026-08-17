@@ -1,7 +1,11 @@
-# Frozen Experimental Protocol — v1.0.0
+# Frozen Experimental Protocol — v1.1.0
 
-**Status: FROZEN as of 2026-08-15.** Everything in `results/` and every number in
-`README.md` was produced under this version.
+**Status: FROZEN.** v1.0.0 was frozen on 2026-08-15 and produced every yolo26n number in
+`results/` and `README.md`. v1.1.0 (2026-08-17) **adds** §10 and §11 — the analysis plans for
+the cross-model check and the padding ablation, both of which v1.0.0 §9 already declared as
+intended variations. **No v1.0.0 value was changed**, so every yolo26n result stands exactly
+as published; the v1.0.0 hash is retained in `protocol.PRIOR_HASHES` so older run manifests
+remain traceable.
 
 This is a pre-registration. It exists so that a reader can tell, without running anything,
 exactly what was measured — and so that we cannot quietly change a threshold after seeing a
@@ -47,8 +51,20 @@ including the letterbox border beside it — translates with it. Only the tile's
 position* within the canvas changes, which is precisely the variable under study.
 
 **Known cost of the `grow` choice, measured not assumed.** The network sees 672 px rather
-than the 640 px it was validated at. Gate B6 measures this at δ=(0,0): **+0.225 AP**
-overall, **−0.065 AP** on small objects. It is reported as a result, not hidden.
+than the 640 px it was validated at. Gate B6 measures this at δ=(0,0) on a **500-image**
+probe: +0.225 AP for the one-to-one head, +0.082 for the one-to-many head.
+
+**On the full validation set the effect is much smaller**, and the 500-image figure for the
+one-to-one head was mostly sampling noise:
+
+| N | e2e | nms |
+|---|---|---|
+| 500 (gate B6 probe) | +0.225 | +0.082 |
+| **5000 (full val)** | **+0.029** | **+0.068** |
+
+Quote the full-val row. The canvas costs about **0.03–0.07 AP**, not a quarter of a point,
+so the input-size objection to `grow` is weaker than the probe suggested — but it is still
+non-zero, which is why `fit` exists and why B6 measures rather than asserts.
 
 ### 1.2 The two embedding modes
 
@@ -232,6 +248,19 @@ All defined over the set of shifts in the grid, per ground-truth object.
 
 A perfectly shift-equivariant detector scores 0 on the first four.
 
+**Comparability — the same constraint ΔAP carries.** Flicker, dropout and class-flip are
+defined as "not constant over the grid" / "missed at ≥ 1 shift" / "more than one class
+across shifts". Every one of them is **monotone non-decreasing in the number of shifts
+sampled**: adding a shift can only add ways to differ, never remove one. So these numbers
+are comparable **only between runs with the same shift grid**, exactly as ΔAP is comparable
+only at the same `M` and `N`. This is visible in the committed data — `results/stability.csv`
+has the same model and head at 1024 shifts (48.5% flicker, 63.2% dropout) and at 256 shifts
+(39.2%, 46.5%).
+
+Box jitter and the Stability Index do **not** share this property: both are averages over
+observed shifts rather than existence claims over the grid, so they are stable as the grid
+is refined. Quote flicker/dropout with the grid; jitter and SI stand on their own.
+
 ### 7.1 Stability Index (2-D adaptation of arXiv:2407.04305)
 
 ```
@@ -289,8 +318,92 @@ Declared so that varying them later is understood as intended, not as fishing:
 
 ---
 
+## 10. Cross-model check (added v1.1.0)
+
+Declared **before any cross-model sweep was run**, so the outcome cannot have shaped the
+test. Two separate questions, two separate arms; they must not be reported as one result.
+
+### 10.1 Replication of the head gap — `yolov10n`
+
+`yolov10n.pt` is the only other released checkpoint that carries a one-to-one and a
+one-to-many branch trained together, so it is a genuine second instance of the core
+ablation: same design, different weights, different training recipe.
+
+* **Instrument**: identical to `11_head_gap.py` — paired sign-flip dispersion test across
+  δ, 10 curves (2 axes × {AP, AP50, AP_small, AP_medium, AP_large}), α = 0.05, 20 000
+  permutations, absolute (not relative) deviations.
+* **Declared in advance**: `AP_small` along x is the curve on which yolo26n showed its
+  largest effect (e2e 1.9× more dispersed, p < 0.0001). It is therefore the pre-specified
+  primary curve for replication; the other nine are secondary and reported as a count.
+* **What counts as a failed replication**: the primary curve not significant, or
+  significant in the opposite direction. A partial result (fewer significant curves, same
+  sign) is weaker evidence, not a failure, and must be reported as such.
+* Sign agreement across the two checkpoints is reported as a **descriptive concordance**,
+  not a p-value — the ten curves are not independent of one another.
+
+### 10.2 Universality of grid-locking — `yolov8n`, `yolo11n`, `rtdetr-l`
+
+These are one-head models and contribute nothing to the head ablation. They test only
+whether the stride-periodic response is a property of detectors built on a strided
+downsampling cascade, or a YOLO26 quirk. RT-DETR-L matters most here: a transformer
+set-prediction head over an HGNetv2 backbone shares almost nothing with YOLO26 except the
+2/4/8/16/32 downsampling ladder, so if it is grid-locked too, the cascade is the mechanism.
+
+Cross-model dispersion is reported **both** in AP points and as a coefficient of variation
+(mean |deviation| ÷ mean AP). The arms sit between ~37 and ~53 AP, so absolute points alone
+would partly measure where a model sits on the AP scale.
+
+### 10.3 Gate A applies to every arm — with one declared deviation
+
+No model's shift behaviour is quoted before it reproduces its published COCO AP. Tolerance
+is 0.1 AP, the same as yolo26n, **except `rtdetr-l`, which is 0.3** and is declared here as
+a deviation rather than applied silently. Its published 53.0 is the RT-DETR-R50 number from
+the original paper's PaddlePaddle evaluation, quoted by Ultralytics for their PyTorch port
+rather than re-measured. Measured here at 52.77 with Ultralytics' own validator; the
+residual does not move with `conf` or `max_det`
+(`results/phase0/rtdetr_protocol_probe.json`), so it is a port gap. For that arm Gate A is a
+sanity check — a preprocessing mistake would cost whole AP points, not a quarter of one —
+rather than a reproduction, and no absolute-AP claim is made from it.
+
+---
+
+## 11. Padding ablation (added v1.1.0)
+
+Kayhan & van Gemert (CVPR'20): a constant padding border is an implicit **absolute
+position** cue. That is a competing explanation for everything measured so far, and the two
+explanations make opposite predictions:
+
+| mechanism | prediction when the border stops being constant |
+|---|---|
+| aliasing from strided downsampling | stride periodicity survives |
+| border position cue | stride periodicity weakens or disappears |
+
+The four arms split into two **groups**, and the grouping is the design:
+
+| `pad_value` | border | absolute-position cue available? |
+|---|---|---|
+| `114` | gray constant — the frozen protocol | yes |
+| `0` | black constant — Manfredi & Wang's canvas | yes |
+| `-1` | replicate (edge pixels extended) | no |
+| `-2` | reflect (mirrored content) | no |
+
+Comparing 114 against 0 alone cannot decide anything, because both are constants; `0`
+controls for the specific *value* while `{-1, -2}` remove the *constant-ness*. The flag sets
+both borders — the letterbox bars when the preprocessing cache is built and the canvas frame
+at embed time — so this changes one thing, not two.
+
+* **N = 1000**, both heads, δx and δy over [0, 63] at 1-px resolution. Declared in advance:
+  if the group difference in stride power is within ±0.10 the ablation is treated as
+  underpowered rather than null, and re-run at N = 5000 before any claim is made.
+* Comparisons against the pad-114 baseline use **relative** dispersion, because changing the
+  padding changes the AP level and absolute points would conflate "wobbles less" with
+  "scores lower".
+
+---
+
 ## Changelog
 
 | version | date | change |
 |---|---|---|
 | 1.0.0 | 2026-08-15 | Initial freeze. Protocol under which all results in `results/` and `README.md` were produced. |
+| 1.1.0 | 2026-08-17 | Added §10 (cross-model check) and §11 (padding ablation). Both were already declared as intended variations in §9 of v1.0.0; v1.1.0 specifies the analysis for them. Written **after** the yolo26n full-validation results were known and **before** any cross-model or padding sweep had been run. Nothing about the yolo26n analysis changed. |

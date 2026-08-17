@@ -60,6 +60,10 @@ def main():
     ap.add_argument("--workers", type=int, default=None,
                     help="processes for the matching stage (default: cores-2, cap 16)")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--tag", default="",
+                    help="suffix for every artifact this run writes. Without it a K=2 run "
+                         "would overwrite the committed K=1 assignment .npy files, which "
+                         "are evidence for the published numbers.")
     args = ap.parse_args()
 
     setup_logging()
@@ -122,12 +126,19 @@ def main():
 
     out_dir = Path("results/oracle")
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Artifact names must not collide across runs that differ only in a parameter.
+    # `iters` is the live case: --iters 2 reuses the same run_id and would silently
+    # overwrite the K=1 assignments the published Delta-AP rests on.
+    tag = args.tag or ("" if args.iters == 1 else f"K{args.iters}")
+    stem = f"{args.run_id}_{tag}" if tag else args.run_id
+    if tag:
+        LOGGER.info(f"artifacts tagged '{tag}' -> {stem}_*")
     results = {}
     for direction in args.directions.split(","):
         LOGGER.info(f"=== greedy {direction} ({args.objective}, area={args.area}) ===")
         res = greedy(
             acc, grid, direction=direction, objective=args.objective, iters=args.iters,
-            checkpoint=out_dir / f"{args.run_id}_{direction}_ckpt.json",
+            checkpoint=out_dir / f"{stem}_{direction}_ckpt.json",
         )
         results[direction] = res
         LOGGER.info(
@@ -140,6 +151,9 @@ def main():
         "max_shift": man.max_shift, "step": man.step, "n_images": gt.num_images,
         "objective": args.objective, "area": args.area, "iters": args.iters,
         "backend": acc.name, "seconds_per_ap": spa,
+        # Content hash of the detections consumed, so this result can be traced to its
+        # exact input rather than to a run_id that may have been rebuilt since.
+        "detections": store.fingerprint(),
         "baseline": {"AP": baseline_ap, "AP50": baseline_ap50},
         "shifts": [list(s) for s in grid],
         "comparable_to_manfredi_wang": man.max_shift == 1,
@@ -153,7 +167,7 @@ def main():
             report[d]["summary_at_assignment"] = summary_at_assignment(
                 gt, per_shift, np.asarray(r.assignment), npig
             )
-        np.save(out_dir / f"{args.run_id}_{d}_assignment.npy", np.asarray(r.assignment, dtype=np.int16))
+        np.save(out_dir / f"{stem}_{d}_assignment.npy", np.asarray(r.assignment, dtype=np.int16))
     if {"best", "worst"} <= set(results):
         report["delta"] = delta_ap(results["best"], results["worst"])
         LOGGER.info(
@@ -162,7 +176,7 @@ def main():
             f"(best {report['delta']['AP_best'] * 100:.2f} / worst {report['delta']['AP_worst'] * 100:.2f})"
         )
 
-    out = args.out or f"results/oracle/{args.run_id}_{args.objective}_{args.area}.json"
+    out = args.out or f"results/oracle/{stem}_{args.objective}_{args.area}.json"
     write_json(out, report)
     LOGGER.info(f"wrote {out}")
 

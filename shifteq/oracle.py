@@ -205,6 +205,8 @@ class TorchAccumulator:
         self.rec = torch.as_tensor(REC_THRS).to(self.dev, torch.float64)
         self.rows_of_image = [t(r, torch.int64) for r in u.rows_of_image]
         self.npig_cpu = u.npig
+        # Divisor kept as a device *tensor*, not a Python int. See `ap()`.
+        self.npig_f = t(u.npig.astype(np.float64), torch.float64)
         self.n_calls = 0
 
     def new_mask(self, assign: np.ndarray):
@@ -243,7 +245,16 @@ class TorchAccumulator:
             b_fp = fp_cum[:, s - 1 : s] if s else 0
             tpc = (tp_cum[:, s:e] - b_tp).double()
             fpc = (fp_cum[:, s:e] - b_fp).double()
-            rc = tpc / npig
+            # `tpc / npig` with a *Python int* divisor compiles to a reciprocal multiply on
+            # CUDA -- x * (1/npig) -- which is one ULP below true division. Dividing by a
+            # device tensor keeps IEEE true division and matches numpy bit for bit.
+            #
+            # This is not a rounding nicety. COCO's 101 recall thresholds are exactly
+            # 0.00, 0.01, ..., 1.00, so whenever a category's npig makes m/npig land *on* a
+            # threshold (npig=55 gives 11/55 = 0.2 exactly), a one-ULP shift downward flips
+            # `searchsorted(..., left)` by one position and picks a different precision
+            # value. Measured on COCO val: 7 of 80 categories affected, 0.0013 AP.
+            rc = tpc / self.npig_f[k]
             pr = tpc / (tpc + fpc + _EPS)
             pr = torch.cummax(pr.flip(1), dim=1).values.flip(1)
             nd = e - s

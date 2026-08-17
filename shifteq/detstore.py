@@ -22,6 +22,7 @@ difference in these numbers is detector shift-variance, with the geometry divide
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -117,6 +118,31 @@ class DetStore:
 
     def size_on_disk(self) -> int:
         return sum(p.stat().st_size for p in self.dir.glob("*.npz"))
+
+    def fingerprint(self) -> dict:
+        """Content hash of the detections this store holds, for the consuming results file.
+
+        A results file that records only a `run_id` cannot be traced back to the bytes it
+        was computed from. This project has already lost time to that: a killed job once
+        overlapped a new one and mixed two NMS kernels into one cache, and later, when two
+        committed results disagreed on a quantity that should have been identical, nothing
+        in either file could say whether the code or the input had differed. (It was the
+        code -- but only a recomputation could establish that.)
+
+        Hashes the shift arrays themselves rather than the file bytes, so it is stable
+        against npz recompression and metadata.
+        """
+        h = hashlib.sha256()
+        shifts = self.available_shifts()
+        for dy, dx in shifts:
+            d = self.load(dy, dx)
+            h.update(f"{dy},{dx}".encode())
+            for a in (d.counts, d.cls, d.score, d.xyxy):
+                h.update(np.ascontiguousarray(a).tobytes())
+        return {"run_id": self.run_id, "n_shifts": len(shifts),
+                "shifts": [list(s) for s in shifts],
+                "sha256": h.hexdigest()[:32],
+                "bytes_on_disk": self.size_on_disk()}
 
 
 @dataclass

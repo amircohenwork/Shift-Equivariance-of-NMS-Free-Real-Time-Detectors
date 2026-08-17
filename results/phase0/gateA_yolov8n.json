@@ -1,0 +1,57 @@
+{
+  "data": "coco.yaml",
+  "failures": [],
+  "fuse_probe": {
+    "applicable": false,
+    "reason": "single-head checkpoint: no one-to-one branch to fuse against"
+  },
+  "gate_pass": true,
+  "gate_rect": true,
+  "harness_baseline": {
+    "nms": {
+      "mAP50": 52.53902420228197,
+      "mAP50-95": 37.30947061984116,
+      "mAP75": 40.545140051147776,
+      "mAP_large": 53.30368313769427,
+      "mAP_medium": 41.007733418807156,
+      "mAP_small": 18.68237341555376,
+      "minus_gate_protocol": -0.0811700171084695
+    }
+  },
+  "heads": {
+    "nms": {
+      "coco": {
+        "mAP50": 52.5909205599687,
+        "mAP50-95": 37.39064063694963,
+        "mAP75": 40.575821708814665,
+        "mAP_large": 53.563942190879864,
+        "mAP_medium": 41.07238572630349,
+        "mAP_small": 18.780302301707184
+      },
+      "conf": 0.001,
+      "delta": 0.09064063694962954,
+      "iou": 0.7,
+      "mAP50-95": 37.39064063694963,
+      "max_det": 300,
+      "pass": true,
+      "published": 37.3,
+      "quantize": null,
+      "rect": true,
+      "save_dir": "/home/student/runs/detect/val-32",
+      "ultralytics_internal": {
+        "mAP50": 51.89170222507722,
+        "mAP50-95": 36.8365621213793
+      }
+    }
+  },
+  "imgsz": 640,
+  "model": "yolov8n",
+  "published": {
+    "nms": 37.3
+  },
+  "tol": 0.1,
+  "torch": "2.13.0+cu126",
+  "ultralytics": "8.4.120",
+  "weights": "yolov8n.pt",
+  "weights_sha256": "f59b3d833e2ff32e194b5bb8e08d211dc7c5bdf144b90d2c8412c47ccfc83b36"
+}

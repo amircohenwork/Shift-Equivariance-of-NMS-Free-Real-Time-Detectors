@@ -125,3 +125,67 @@ def test_greedy_second_iteration_changes_little(setup):
     assert aps == sorted(aps), "greedy AP must be non-decreasing across iterations"
     if len(aps) > 1:
         assert (aps[-1] - aps[0]) <= 0.05 * max(aps[0], 1e-9) + 1e-6
+
+
+# --------------------------------------------------------------------------------------
+# Regression: CUDA true division vs reciprocal multiply at exact recall thresholds
+# --------------------------------------------------------------------------------------
+def _exact_threshold_npigs(rec_thrs=None):
+    """Category sizes for which some m/npig lands *exactly* on a COCO recall threshold.
+
+    COCO interpolates precision at 101 thresholds 0.00, 0.01, ... 1.00. Whenever a
+    category's non-ignored GT count `npig` makes m/npig equal one of them, the recall
+    array touches a threshold exactly -- and a one-ULP error in computing m/npig moves it
+    to the other side, flipping `searchsorted(..., side="left")` by a whole position.
+    """
+    from shifteq.cocolite import REC_THRS
+
+    rec = REC_THRS if rec_thrs is None else rec_thrs
+    out = []
+    for npig in range(2, 120):
+        ms = np.arange(npig + 1, dtype=np.float64) / np.float64(npig)
+        if np.isin(ms, rec).sum() > 2:
+            out.append(npig)
+    return out
+
+
+def test_exact_recall_thresholds_are_actually_reachable():
+    """The premise of the regression test below: such category sizes exist and are common."""
+    ns = _exact_threshold_npigs()
+    assert len(ns) > 10, ns
+    assert 55 in ns, "npig=55 gives 11/55=0.2, 22/55=0.4, 44/55=0.8 exactly"
+
+
+def test_torch_accumulator_matches_numpy_on_every_device(setup):
+    """`tpc / npig` with a Python-int divisor becomes a reciprocal multiply on CUDA, one
+    ULP below true division. Wherever a recall value sits exactly on a threshold that flips
+    the interpolation index and changes AP -- 0.0013 AP over COCO val, 7 of 80 categories.
+
+    torch/cpu never had the bug, so a CPU-only run of this test cannot fail; it is here so
+    that a GPU machine catches a regression. The `npig_f` device tensor in
+    `TorchAccumulator` is the fix.
+    """
+    torch = pytest.importorskip("torch")
+    _, _, _, u = setup
+    devices = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
+    ref = NumpyAccumulator(u)
+    rng = np.random.default_rng(11)
+    for dev in devices:
+        acc = TorchAccumulator(u, device=dev)
+        for _ in range(3):
+            assign = rng.integers(0, N_SHIFT, size=u.n_images)
+            x = ref.ap(ref.new_mask(assign))
+            y = acc.ap(acc.new_mask(assign))
+            assert abs(x[0] - y[0]) < 1e-12 and abs(x[1] - y[1]) < 1e-12, (dev, x, y)
+
+
+def test_divisor_is_a_tensor_not_a_python_int():
+    """Pin the fix itself. `tensor / int` and `tensor / tensor` lower to different CUDA
+    kernels, and only the second is IEEE true division -- a future refactor that 'simplifies'
+    `self.npig_f[k]` back to `npig` would silently reintroduce the bug on GPU only."""
+    import inspect
+
+    src = inspect.getsource(TorchAccumulator.ap)
+    assert "rc = tpc / self.npig_f[k]" in src, (
+        "TorchAccumulator.ap must divide by the device tensor `npig_f`, not a Python int"
+    )
