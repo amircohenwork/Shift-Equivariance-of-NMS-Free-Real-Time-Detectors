@@ -1,0 +1,54 @@
+==============================================================
+ pipeline summary   2026-08-18T02:15:54+03:00
+==============================================================
+
+--- stages reached ---
+  reached  CROSS_V10_DONE
+  reached  CROSS_YOLO_DONE
+  reached  CROSS_ALL_DONE
+  reached  CROSSCHECK_REPORT_DONE
+  reached  PAD_SWEEPS_DONE
+  reached  NIGHT_ALL_DONE
+  reached  FU_CACHE_DONE
+  reached  FU_ORACLE_DONE
+  reached  FU_SWEEP_DONE
+  reached  FU_TTA_DONE
+  reached  FU_K2_DONE
+  reached  ALL_WORK_DONE
+
+--- errors in any batch log ---
+  none
+
+--- cross-model check (grid-locking universal? head gap replicated?) ---
+22:32:41 | INFO    |   TOTAL 69/70 curves grid-locked across 7 model/head arms
+22:32:41 | INFO    |   -> yolo26n: e2e less stable on 4/10, nms on 1
+22:32:41 | INFO    |   -> yolov10n: e2e less stable on 0/10, nms on 2
+22:32:41 | INFO    |   sign agreement between yolo26n and yolov10n: 4/10 curves point the same way
+22:32:42 | INFO    | CROSS-CHECK: 69/70 curves grid-locked over 7 arms / 5 models.
+
+--- padding ablation (aliasing or border-reading?) ---
+23:19:10 | INFO    | stride power, constant border (4 arms): 0.691 | content-derived border (4 arms): 0.574 | Δ+0.116
+23:19:10 | INFO    | VERDICT: border cue contributes
+23:19:10 | INFO    | across all padding arms: 74/80 curves grid-locked
+
+--- YOLOv10-N oracle: does the head gap replicate on the strong instrument? ---
+  yolov10n/e2e  dAP=3.6704  dAP50=6.5653  baseline=38.451
+  yolov10n/nms  dAP=2.8937  dAP50=5.4903  baseline=39.521
+  (yolo26n for comparison: e2e dAP 3.7555, nms dAP 3.2537 -> e2e +15.4%)
+
+--- YOLOv10-N instance metrics ---
+  yolov10n/e2e  flicker=36.8%  dropout=45.4%  small_dropout=80.9%  jitter=1.69px
+  yolov10n/nms  flicker=28.4%  dropout=27.6%  small_dropout=53.2%  jitter=1.76px
+  (yolo26n for comparison: e2e flicker 39.2% dropout 46.5% small 80.2% | nms 30.2% 28.8% 57.7%)
+
+--- K=2 oracle: was K=1 sufficient? ---
+  yolo26n/e2e K=2  dAP=3.8321  iterations=[(0, 3645), (1, 610)]
+  yolo26n/nms K=2  dAP=3.3371  iterations=[(0, 3658), (1, 704)]
+  (K=1 published: e2e dAP 3.7555, nms dAP 3.2537)
+
+--- last watchdog state ---
+watchdog 02:15:06   (poll 60s, stall threshold 900s)
+  stage      : python scripts/04_oracle.py --run-id yolo26n_nms_m1s1_full_pad114 --iters 2 --device 0   [process alive]
+  progress   : 64 rows in yolo26n_nms_m63s1_n1000_pad-2_y.jsonl, idle 0s
+  finished   : CROSS_V10_DONE CROSS_YOLO_DONE CROSS_ALL_DONE CROSSCHECK_REPORT_DONE PAD_SWEEPS_DONE NIGHT_ALL_DONE FU_CACHE_DONE FU_ORACLE_DONE FU_SWEEP_DONE FU_TTA_DONE
+  disk / gpu : 58G free | 61 %, 740 MiB
