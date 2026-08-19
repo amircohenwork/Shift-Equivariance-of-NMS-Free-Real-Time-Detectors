@@ -25,6 +25,14 @@ STALL_SECS=${STALL_SECS:-900}   # 15 min. RT-DETR shifts take ~70 s and a cold-c
                                 # shift took 238 s, so this is a safe multiple of both.
 MIN_FREE_GB=${MIN_FREE_GB:-8}
 
+# What this watchdog is watching. Overridable per batch, because a hard-coded pattern that
+# no longer matches the running batch is the failure this whole script exists to prevent:
+# it would report "crashed" for a healthy run, or "alive" for a dead one.
+WORKER_RE=${WORKER_RE:-"scripts/(0[3457]|1[03])_"}      # the long-running stages
+RUNNER_RE=${RUNNER_RE:-"run_night.sh|run_followup.sh"}  # the batch driver itself
+ERRLOGS=${ERRLOGS:-"logs/night.log logs/fu_*.log"}      # globbed, so leave unquoted below
+SENTINELS=${SENTINELS:-"CROSS_V10_DONE CROSS_YOLO_DONE CROSS_ALL_DONE CROSSCHECK_REPORT_DONE PAD_SWEEPS_DONE NIGHT_ALL_DONE FU_CACHE_DONE FU_ORACLE_DONE FU_SWEEP_DONE FU_TTA_DONE FU_K2_DONE ALL_WORK_DONE"}
+
 STATUS=logs/watchdog_status.txt
 HIST=logs/watchdog.jsonl
 ALERT=/tmp/WATCHDOG_ALERT
@@ -44,7 +52,7 @@ while true; do
   ts=$(date +%H:%M:%S)
 
   # --- what stage are we on, and how far in? -----------------------------------------
-  cmd=$(ps -eo cmd | grep -E "scripts/(0[3457]|1[03])_" | grep -v grep | head -1)
+  cmd=$(ps -eo cmd | grep -E "$WORKER_RE" | grep -v grep | head -1)
   alive=$([ -n "$cmd" ] && echo 1 || echo 0)
   stage=$(echo "$cmd" | sed -E 's/.*--model ([^ ]+) --head ([^ ]+).*--pad-value ([^ ]+).*/\1:\2 pad\3/')
   [ -z "$stage" ] && stage="(none)"
@@ -72,8 +80,7 @@ while true; do
 
   # --- sentinels reached so far --------------------------------------------------------
   done_stages=""
-  for s in CROSS_V10_DONE CROSS_YOLO_DONE CROSS_ALL_DONE CROSSCHECK_REPORT_DONE \
-           PAD_SWEEPS_DONE NIGHT_ALL_DONE FU_CACHE_DONE FU_ORACLE_DONE FU_SWEEP_DONE FU_TTA_DONE FU_K2_DONE ALL_WORK_DONE; do
+  for s in $SENTINELS; do
     [ -f "/tmp/$s" ] && done_stages="$done_stages $s"
   done
 
@@ -84,14 +91,14 @@ while true; do
   # --- the actual checks ---------------------------------------------------------------
   if [ "$alive" = "0" ] && [ ! -f /tmp/ALL_WORK_DONE ]; then
     # no worker process and no completion sentinel: either between stages, or dead.
-    if ! pgrep -f "run_night.sh|run_followup.sh" > /dev/null; then
+    if ! pgrep -f "$RUNNER_RE" > /dev/null; then
       alert "no batch runner and no ALL_WORK_DONE -- crashed or was killed"
     fi
   fi
   if [ "$idle" -gt "$STALL_SECS" ] && [ ! -f /tmp/ALL_WORK_DONE ]; then
     alert "no progress for ${idle}s (stage $stage, $rows rows in $(basename "${newest:-none}"))"
   fi
-  errfile=$(grep -lE "Traceback|CUDA out of memory|CUDA error" logs/night.log logs/fu_*.log 2>/dev/null | head -1)
+  errfile=$(grep -lE "Traceback|CUDA out of memory|CUDA error" $ERRLOGS 2>/dev/null | head -1)
   if [ -n "$errfile" ]; then
     alert "error text in $errfile: $(grep -oE 'Traceback|CUDA out of memory|CUDA error' "$errfile" | tail -1)"
   fi

@@ -23,8 +23,14 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 
 # /tmp is cleared by a reboot, so do not depend on a runenv.sh left by an earlier session.
+# The venv lives at ~/venv on this box, not inside the repo; check both rather than assume.
 if [ -f /tmp/runenv.sh ]; then source /tmp/runenv.sh; fi
-[ -n "${VIRTUAL_ENV:-}" ] || { [ -f venv/bin/activate ] && source venv/bin/activate; }
+if [ -z "${VIRTUAL_ENV:-}" ]; then
+  for V in venv "$HOME/venv" .venv "$HOME/.venv"; do
+    [ -f "$V/bin/activate" ] && { source "$V/bin/activate"; break; }
+  done
+fi
+python -c 'import torch' 2>/dev/null || { echo "FATAL: no python with torch on PATH"; exit 1; }
 mkdir -p logs results/oracle
 
 DEV=${DEV:-0}
