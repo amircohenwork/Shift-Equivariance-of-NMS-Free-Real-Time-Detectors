@@ -7,6 +7,8 @@ launch and watch the scripts under `scripts/`.
 |---|---|
 | `run_crosscheck.sh` | the cross-model 1-D sweeps + padding ablation, in value order |
 | `run_followup.sh` | queued behind it: YOLOv10-N oracle/instance/TTA replication, and the K=2 oracle |
+| `run_final.sh` | the last two proposal items: the small-object oracle (§12.1) and the max-shift ladder (§12.2) |
+| `reporter_final.sh` | same idea as `reporter.sh`, for the final batch: every number printed beside the §12 prediction it was pre-registered against |
 | `watchdog.sh` | liveness monitor; writes `logs/watchdog_status.txt`, raises `/tmp/WATCHDOG_ALERT` |
 | `reporter.sh` | waits for the pipeline to finish, then writes `logs/SUMMARY.txt` |
 

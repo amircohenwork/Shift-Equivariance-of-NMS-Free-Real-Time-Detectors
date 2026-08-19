@@ -1,11 +1,12 @@
-# Frozen Experimental Protocol — v1.1.0
+# Frozen Experimental Protocol — v1.2.0
 
 **Status: FROZEN.** v1.0.0 was frozen on 2026-08-15 and produced every yolo26n number in
-`results/` and `README.md`. v1.1.0 (2026-08-17) **adds** §10 and §11 — the analysis plans for
-the cross-model check and the padding ablation, both of which v1.0.0 §9 already declared as
-intended variations. **No v1.0.0 value was changed**, so every yolo26n result stands exactly
-as published; the v1.0.0 hash is retained in `protocol.PRIOR_HASHES` so older run manifests
-remain traceable.
+`results/` and `README.md`. v1.1.0 (2026-08-17) added §10 and §11 — the analysis plans for
+the cross-model check and the padding ablation. v1.2.0 (2026-08-19) **adds** §12, the two
+remaining variations §9 has declared as intended since v1.0.0: the small-object oracle and
+the max-shift ladder. **No v1.0.0 or v1.1.0 value was changed**, so every result already
+published stands exactly as it is; superseded hashes are retained in
+`protocol.PRIOR_HASHES` so older run manifests remain traceable.
 
 This is a pre-registration. It exists so that a reader can tell, without running anything,
 exactly what was measured — and so that we cannot quietly change a threshold after seeing a
@@ -401,9 +402,67 @@ at embed time — so this changes one thing, not two.
 
 ---
 
+## 12. The two remaining declared variations (added v1.2.0)
+
+§9 has listed both since v1.0.0 as axes intended to be varied. This section says what each
+one predicts and what would refute it — written **before either was run**, for the same
+reason §10 was: an instrument whose expected outcome is only written down afterwards can be
+read either way.
+
+### 12.1 Small-object oracle — `--area small`
+
+§4 pins the greedy objective's area range to `all`. The `AP_small` figure reported next to
+it comes from `summary_at_assignment`: AP_small evaluated **at the assignment that maximised
+overall AP50**. That is a description of that assignment, not a search over small objects,
+and the README says so. This is the real one.
+
+* **Instrument**: identical to §4 in every respect — `max_shift` 1, `step` 1, `K` 1,
+  objective AP50, initialisation δ\*ᵢ = (0,0), image order, `N` = 5000 — with the objective's
+  **area range** changed from `all` to `small` and nothing else.
+* **Arms**: `yolo26n` e2e/nms (primary) and `yolov10n` e2e/nms (replication), reusing the
+  existing detection caches. No new inference.
+* **Declared in advance**: the instance metrics put the head difference overwhelmingly in
+  small-object dropout — 80.2% vs 57.7% on yolo26n, 80.9% vs 53.2% on yolov10n — so a
+  small-object envelope should separate the heads **more** than the all-area envelope did.
+  The prediction is Δ(e2e) > Δ(nms) on both checkpoints, with a **relative** gap exceeding
+  the all-area gap. The **primary quantity is the ΔAP ratio**, because that is what the
+  +15.4% (yolo26n) and +26.8% (yolov10n) figures the prediction is calibrated against are;
+  the ΔAP50 ratio is reported alongside it as secondary. Both are stated whatever they say,
+  so that neither can be selected after the fact.
+* **What would refute it**: e2e's small-object envelope no wider than nms's, or a relative
+  gap *smaller* than the all-area gap. Either says small objects are not where the head
+  difference lives, and finding 1's stated mechanism would need rewriting rather than
+  footnoting.
+* **Comparability**: ΔAP is only ever comparable within a fixed (`M`, `N`, area). A
+  small-object envelope sits on a different AP scale; only the e2e-vs-nms contrast *within*
+  it is readable. It must not be placed beside the all-area ΔAP as if it were a larger
+  version of the same number.
+* Artifacts are written with `--tag small`, because without it the run overwrites the
+  committed all-area assignment `.npy` files that the published ΔAP rests on.
+
+### 12.2 Max-shift ladder — Manfredi & Wang Table 2
+
+* **Grid**: M ∈ {1, 3, 7, 15}, `step` 1, both heads, `yolo26n`. The shifted set grows
+  quadratically in M, so **N = 100** is what makes M=15 reachable — the same constraint that
+  drove their choice. They drew 100 images at random; ours is the frozen §1.3 subset rule
+  (`default_rng(0).choice`, then sorted), i.e. deterministic rather than random.
+* **Declared in advance**, from their Sec. 4.1:
+  1. ΔAP50 grows **monotonically** with M, and **sub-linearly**;
+  2. best and worst are roughly **symmetric about the δ=(0,0) baseline** — the unshifted
+     number behaves like an average case, not a best case;
+  3. ΔAP (0.50:0.95) **need not** grow monotonically, because the search optimises AP50.
+     This is their own caveat and the reason §4 pins the objective to AP50.
+* **What would refute it**: super-linear growth in M, or a strongly asymmetric envelope.
+* **Comparability**: ΔAP is not comparable across `M` or across `N`. The ladder's M=1 point
+  is an N=100 measurement and is **not** the published M=1 / N=5000 number; quoting one for
+  the other would be an error. The ladder is read as a **shape**, not as levels.
+
+---
+
 ## Changelog
 
 | version | date | change |
 |---|---|---|
 | 1.0.0 | 2026-08-15 | Initial freeze. Protocol under which all results in `results/` and `README.md` were produced. |
 | 1.1.0 | 2026-08-17 | Added §10 (cross-model check) and §11 (padding ablation). Both were already declared as intended variations in §9 of v1.0.0; v1.1.0 specifies the analysis for them. Written **after** the yolo26n full-validation results were known and **before** any cross-model or padding sweep had been run. Nothing about the yolo26n analysis changed. |
+| 1.2.0 | 2026-08-19 | Added §12 — the small-object oracle and the max-shift ladder, the last two variations §9 declared in v1.0.0. States what each predicts and what would refute it, written **before either was run**. No v1.0.0 or v1.1.0 value changed. |

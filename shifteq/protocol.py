@@ -20,7 +20,7 @@ import hashlib
 import json
 from typing import Any
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 CHANGELOG = [
     ("1.0.0", "2026-08-15", "Initial freeze. Protocol under which all results in "
@@ -31,12 +31,18 @@ CHANGELOG = [
                             "yolo26n full-validation results were known and before any "
                             "cross-model or padding sweep had been run. No v1.0.0 value "
                             "changed, so every yolo26n number stands unaltered."),
+    ("1.2.0", "2026-08-19", "Added SMALL_ORACLE and LADDER. Both were already declared as "
+                            "intended variations in v1.0.0 (PROTOCOL.md section 9); this "
+                            "version states what each one predicts and what would refute "
+                            "it, written before either was run. No v1.0.0 or v1.1.0 value "
+                            "changed."),
 ]
 
 #: Hashes of superseded versions, so a run manifest recorded under an older protocol stays
 #: traceable after an amendment. `protocol_hash()` only ever describes the current version.
 PRIOR_HASHES = {
     "1.0.0": "7daf22d45cd62116",
+    "1.1.0": "7e944f76f4318d54",
 }
 
 
@@ -252,6 +258,70 @@ PADDING = {
     "escalate_to_n_images": 5000,
 }
 
+# --------------------------------------------------------------------------------------
+# 12.1 Small-object oracle                                                 (added v1.2.0)
+# --------------------------------------------------------------------------------------
+#: Section 4 fixes the greedy objective's area range to `all`. The AP_small figure reported
+#: alongside it comes from `summary_at_assignment` -- AP_small read off the assignment that
+#: maximised overall AP50 -- which is a *description of that assignment*, not an oracle for
+#: small objects. This is the real one.
+SMALL_ORACLE = {
+    "changes_from_section_4": "objective area range only ('all' -> 'small'); max_shift, "
+                              "step, K, objective, initialisation, image order and N are "
+                              "unchanged",
+    "area_range": "small",
+    "arms": ["yolo26n:e2e", "yolo26n:nms", "yolov10n:e2e", "yolov10n:nms"],
+    "n_images": 5000,
+    # Declared before the run. The instance metrics put the head difference overwhelmingly
+    # in small-object dropout (80.2% vs 57.7% on yolo26n, 80.9% vs 53.2% on yolov10n), so a
+    # small-object envelope should separate the heads *more* than the all-area envelope did.
+    "prediction": "delta(e2e) > delta(nms) on both checkpoints, and the relative gap "
+                  "exceeds the all-area relative gap (+15.4% yolo26n, +26.8% yolov10n)",
+    # Named now so it cannot be chosen after the fact: the +15.4%/+26.8% figures the
+    # prediction is calibrated against are dAP ratios, so dAP is primary. dAP50 is
+    # reported alongside, whatever it says.
+    "primary_quantity": "dAP ratio",
+    "secondary_quantity": "dAP50 ratio",
+    "refuted_if": "e2e's small-object envelope is no wider than nms's, or the relative gap "
+                  "is smaller than the all-area gap -- either would mean small objects are "
+                  "not where the head difference lives, and finding 1's stated mechanism "
+                  "would need rewriting",
+    # dAP is only ever comparable within a fixed (M, N, area). A small-object envelope sits
+    # on a different AP scale entirely; only the e2e-vs-nms contrast within it is readable.
+    "comparable_across_area_ranges": False,
+    # Without this the run overwrites the committed all-area assignment .npy files, which
+    # are the evidence for the published numbers.
+    "artifact_tag": "small",
+}
+
+# --------------------------------------------------------------------------------------
+# 12.2 Max-shift ladder (Manfredi & Wang Table 2)                          (added v1.2.0)
+# --------------------------------------------------------------------------------------
+LADDER = {
+    "max_shifts": [1, 3, 7, 15],
+    # They used 100 random COCO val images; the shifted set grows quadratically in M, so a
+    # small image set is the only way to reach M=15. Ours is the frozen seed-0 subset rule,
+    # deterministic rather than random.
+    "n_images": 100,
+    "subset_rule": "section 1.3 frozen rule (default_rng(0).choice, then sorted)",
+    "heads": ["e2e", "nms"],
+    "model": "yolo26n",
+    # Their Sec. 4.1, declared here as predictions rather than read off afterwards.
+    "prediction_growth": "dAP50 grows monotonically with M, and sub-linearly",
+    "prediction_symmetry": "best and worst are roughly symmetric about the delta=(0,0) "
+                           "baseline -- the unshifted number behaves like an average case, "
+                           "not a best case",
+    # Their own caveat, and the reason section 4 pins the objective to AP50.
+    "prediction_dap_not_monotone": "dAP (0.50:0.95) need NOT grow monotonically, because "
+                                   "the search optimises AP50",
+    "refuted_if": "super-linear growth in M, or a strongly asymmetric envelope",
+    # The ladder is read as a shape. Its M=1 point is N=100 and is NOT the published
+    # M=1 / N=5000 number; quoting one for the other would be an error.
+    "comparable_across_m_or_n": False,
+    "reference": "Manfredi & Wang, arXiv:2008.05787, Table 2 (RetinaNet: baseline AP 43.8 "
+                 "/ AP50 64.2; at M=15, dAP 8.3 and dAP50 21.5)",
+}
+
 
 ALL: dict[str, Any] = {
     "version": VERSION,
@@ -265,6 +335,8 @@ ALL: dict[str, Any] = {
     "tta": TTA,
     "cross_check": CROSS_CHECK,
     "padding": PADDING,
+    "small_oracle": SMALL_ORACLE,
+    "ladder": LADDER,
 }
 
 

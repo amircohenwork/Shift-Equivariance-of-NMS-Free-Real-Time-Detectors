@@ -64,9 +64,10 @@ repo is the first shift-equivariance study of one-to-one NMS-free detectors.
 Full numbers in [Results](#results). No training is involved: everything is inference on
 public pretrained checkpoints.
 
-> **[`PROTOCOL.md`](PROTOCOL.md) is frozen** (v1.1.0, hash `7e944f76f4318d54`; v1.0.0 was `7daf22d45cd62116` and produced every yolo26n
-> number below — v1.1.0 only *adds* the cross-model and padding analysis plans). Every
-> threshold, the exact prediction↔GT matching rule, and every deviation from Manfredi &
+> **[`PROTOCOL.md`](PROTOCOL.md) is frozen** (v1.2.0, hash `73bd33e5c129e367`; v1.0.0 was
+> `7daf22d45cd62116` and produced every yolo26n number below, v1.1.0 was `7e944f76f4318d54`
+> — later versions only *add* analysis plans for variations v1.0.0 §9 had already declared).
+> Every threshold, the exact prediction↔GT matching rule, and every deviation from Manfredi &
 > Wang are pinned there before results are read. `shifteq/protocol.py` is its
 > machine-readable twin, `tests/test_protocol_frozen.py` fails if the two drift, and every
 > run manifest records the protocol hash. Read it before the results.
@@ -85,7 +86,7 @@ python3 -m venv venv && . venv/bin/activate
 pip install -r requirements.txt
 
 make setup     # COCO val2017 images + labels + instances_val2017.json (~2.5 GB)
-make test      # 87 unit tests -- no GPU, no dataset, no weights needed, ~10 s
+make test      # 97 unit tests -- no GPU, no dataset, no weights needed, ~10 s
 ```
 
 Point Ultralytics at the dataset once (the setup script prints the exact command):
