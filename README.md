@@ -31,13 +31,17 @@ repo is the first shift-equivariance study of one-to-one NMS-free detectors.
    YOLOv10-N, where the gap is larger still (+26.8%)** — and its
    instability is concentrated in *whether an object is reported* rather than *where* —
    46.5% dropout vs 28.8%, and **80% of small objects** detected at δ=(0,0) vanish at some
-   shift, while box jitter is if anything slightly lower.
+   shift, while box jitter is if anything slightly lower. The penalty is **not** a
+   small-object effect, though: a genuine small-object oracle puts the head gap at +14.7%
+   and +12.4%, at or *below* the all-area figure on both checkpoints, even though a
+   one-pixel shift costs a quarter of small-object AP outright
+   ([§11](#11-small-object-oracle--is-the-penalty-a-small-object-effect)).
 2. **The instability is grid-locked, not noise.** A 1-px-resolution sweep over two full
    strides puts 41–89% of spectral power on the network's downsampling periods (2/4/8/16/32)
    against 16% expected by chance — **20 of 20 curves**, permutation-tested on the full
    validation set. **Even shifts outscore odd shifts**, most on small objects: the stride-2
    stem's aliasing signature. This now holds on **40 of 40 curves across two checkpoints**
-   (yolo26n and YOLOv10-N) — see [§9](#9-cross-model-check).
+   (yolo26n and YOLOv10-N) — see [§9](#9-cross-model-check--is-this-about-yolo26-or-about-detectors).
 3. **The NMS-free head cannot exploit its own variance.** Shift-TTA recovers +0.86 AP, but
    only by putting NMS back; the merge that stays NMS-free loses 26 AP.
 
@@ -86,7 +90,7 @@ python3 -m venv venv && . venv/bin/activate
 pip install -r requirements.txt
 
 make setup     # COCO val2017 images + labels + instances_val2017.json (~2.5 GB)
-make test      # 97 unit tests -- no GPU, no dataset, no weights needed, ~10 s
+make test      # 98 unit tests -- no GPU, no dataset, no weights needed, ~10 s
 ```
 
 Point Ultralytics at the dataset once (the setup script prints the exact command):
@@ -473,10 +477,41 @@ checkpoints is 4/10 — below the 5/10 of unrelated curves. The pre-registered p
 replication by the criterion in §10.1.
 
 **That criterion named the wrong instrument, and we only know because it was written down.**
-The uniform-shift curve applies *one* shift to every image, so it can only see variation that
-survives averaging across the dataset; the oracle and the per-object metrics resolve
-per-image variation, which is where this effect lives. On yolo26n all three happened to
-agree, which is what made the weak one look adequate. It is not.
+There are three separate reasons to think so, and only the third is the one the failure
+itself suggests — which matters, because "the test disagreed, therefore the test was bad" is
+the exact post-hoc rescue a pre-registration exists to prevent.
+
+**We picked the primary endpoint by taking the maximum of ten noisy curves.** §10.1 says it
+outright: *"`AP_small` along x is the curve on which yolo26n showed its largest effect... It
+is therefore the pre-specified primary curve."* That is the winner's curse. Selecting the
+most extreme of ten measurements on the pilot checkpoint and then asking a second sample to
+confirm it guarantees regression to the mean, whether or not the underlying effect is real.
+This is a methodology error on our part and it is the main one.
+
+**The instrument was already self-contradictory on yolo26n, before YOLOv10-N existed.** Same
+checkpoint, same axis:
+
+| curve | direction | p |
+|---|---|---|
+| `x/AP_large` | e2e worse | 0.00010 |
+| `x/AP_medium` | **nms worse** | 0.00140 |
+
+Both significant, opposite directions. And the same metric on orthogonal axes: `x/AP_small`
+p = 0.00005 against `y/AP_small` p = 0.084. An instrument reporting all of that at once is
+not measuring a coherent head-level property, and **we could have known that without running
+the second checkpoint.**
+
+**It sees roughly 20× less signal, by construction.** Uniform-shift dispersion magnitudes are
+~0.15 AP; the oracle envelope is 2.9–3.8 AP. Applying *one* shift to all 5000 images averages
+per-image instability away — image A losing a detection cancels image B gaining one. The
+effect lives per-image, and this instrument integrates over exactly that axis. On yolo26n all
+three instruments happened to agree, which is what made the weak one look adequate. It is not.
+
+Nothing here rescues the pre-registration by substituting a better-behaved instrument after
+the fact: `shifteq/oracle.py` has been touched twice in this repository's history — the
+initial commit and a CUDA division fix — and its metric was frozen in protocol **v1.0.0,
+before any YOLOv10-N data existed**. The only post-hoc decision was pointing an already-frozen
+metric at a second checkpoint, which cannot manufacture a false positive.
 
 So the finding stands on the oracle envelope and the instance metrics — the two instruments
 that carried it originally — and the uniform-shift curve is demoted to what it is: an honest
@@ -537,6 +572,103 @@ Three further readings, in decreasing confidence:
 
 Reported as a departure from our own pre-registered summary statistic, with the reason,
 rather than quietly substituting a better-behaved one.
+
+---
+
+### 11. Small-object oracle — is the penalty a small-object effect?
+
+Until now the AP_small figure printed beside the oracle came from `summary_at_assignment`:
+AP_small read off the assignment that maximised **overall** AP50. That describes an
+assignment; it does not search over small objects. [`PROTOCOL.md` §12.1](PROTOCOL.md)
+pre-registered the real one — identical to §4 in every respect except the objective's area
+range — together with its prediction: because the head difference sits overwhelmingly in
+small-object dropout (80.2% vs 57.7%), a small-object envelope should separate the heads
+**more** than the all-area envelope did.
+
+| checkpoint | ΔAP e2e | ΔAP nms | gap, small | gap, all-area | ΔAP50 gap, small | ΔAP50 gap, all |
+|---|---|---|---|---|---|---|
+| yolo26n | 6.083 | 5.302 | **+14.7%** | +15.4% | **+8.0%** | +14.5% |
+| YOLOv10-N | 5.324 | 4.738 | **+12.4%** | +26.8% | **+7.6%** | +19.6% |
+
+**The prediction lost, on both checkpoints, in the same direction.** The pre-registered
+verdict is *partial*: e2e is worse on small objects, but the gap does not widen — it is flat
+on the primary quantity (ΔAP) and narrower on the secondary (ΔAP50). The failure itself
+replicates.
+
+**What replaced it is a cleaner result than the prediction would have been.** The
+small-object gap is nearly identical across two independently trained checkpoints — +14.7%
+and +12.4% on ΔAP, +8.0% and +7.6% on ΔAP50 — while the all-area gap differs between them by
+eleven points. The two checkpoints disagree about the NMS-free penalty on *medium and large*
+objects and agree closely on small ones. So the penalty is roughly **size-proportional**, not
+a small-object phenomenon.
+
+What *is* a small-object phenomenon is fragility itself, and it is the largest effect
+measured anywhere in this project:
+
+| | envelope as % of that arm's own best AP |
+|---|---|
+| yolo26n e2e — small / all | **26.4%** / 9.0% |
+| yolo26n nms — small / all | **22.4%** / 7.7% |
+| YOLOv10-N e2e — small / all | **24.4%** / 9.1% |
+| YOLOv10-N nms — small / all | **20.8%** / 7.1% |
+
+A one-pixel shift can cost **a quarter of small-object AP**, roughly three times the
+all-object figure — and it does so to *both* heads.
+
+The instance metrics already said this and nobody had read them that way: the dropout head
+ratio is 46.5/28.8 = **1.61×** overall but 80.2/57.7 = **1.39×** on small objects. Two
+independent instruments, same conclusion. Finding 1's wording is about e2e's absolute rates
+and stands as written; **"the head gap is biggest on small objects" is now measured, and it
+is false.**
+
+ΔAP_small is not comparable to ΔAP_all — different area range, different AP scale — so only
+the e2e-vs-nms contrast *within* a column is readable. The `comparable` column in
+`results/oracle.csv` reflects that.
+
+### 12. Max-shift ladder — meeting Manfredi & Wang on their protocol
+
+The one place this project is measured on the prior work's design rather than its own:
+M ∈ {1, 3, 7, 15} on 100 images, pre-registered with its three predictions in
+[`PROTOCOL.md` §12.2](PROTOCOL.md).
+
+| M | shifts | e2e ΔAP | e2e ΔAP50 | ΔAP50/M | nms ΔAP | nms ΔAP50 | ΔAP50/M |
+|---|---|---|---|---|---|---|---|
+| 1 | 4 | 3.471 | 6.044 | 6.04 | 3.669 | 6.234 | 6.23 |
+| 3 | 16 | 8.119 | 12.888 | 4.30 | 7.017 | 12.131 | 4.04 |
+| 7 | 64 | 12.040 | 18.843 | 2.69 | 10.310 | 17.188 | 2.46 |
+| 15 | 256 | 14.476 | 25.137 | **1.68** | 12.979 | 22.932 | **1.53** |
+
+**All three predictions confirmed, on both heads.**
+
+* **Monotone in M** ✓
+* **Sub-linear** ✓ — ΔAP50/M falls from 6.04 to 1.68. The envelope grows, but each extra
+  pixel of shift budget buys less than the last.
+* **Symmetric about the baseline** ✓ — mean asymmetry between `best − baseline` and
+  `baseline − worst` is 0.08 (e2e) and 0.09 (nms). δ=(0,0) behaves like an **average** case,
+  not a best case: roughly as much AP is available above the unshifted number as below it.
+* Unpredicted bonus: ΔAP came out monotone too, which their Sec. 4.1 says it *need not* be
+  (the search optimises AP50, so the 0.50:0.95 column is free to wander).
+
+Against their RetinaNet at M=15 — ΔAP 8.3, ΔAP50 21.5 — yolo26n is **less** shift-equivariant
+(14.48 / 25.14). Different detector, different image set, so read the shape and not the
+levels; that is what §12.2 pre-registered.
+
+#### The M=1 rung is the comparability caveat proving itself
+
+| M | e2e vs nms |
+|---|---|
+| 1 | **−5.4%** (nms worse) |
+| 3 | +15.7% |
+| 7 | +16.8% |
+| 15 | +11.5% |
+
+At M=1 the heads come out **reversed** against the published +15.4% — because this ladder is
+N=100 and the published figure is N=5000. On 100 images the head contrast is noise. §12.2
+pre-declared that rung non-comparable for exactly this reason, and the number is printed here
+rather than dropped. From M=3 onward the gap reappears at close to its full-validation
+magnitude, on a completely different image sample.
+
+![max-shift ladder](results/figures/ladder.png)
 
 ---
 
@@ -865,7 +997,10 @@ Every run writes a manifest recording the weights SHA-256, a state-dict fingerpr
 * The sweep numbers are on 1000 images (the oracle uses all 5000); step-2 grids
   underestimate the AP range by ~18%, so quote them as lower bounds.
 * `summary_at_assignment` reports AP_s/m/l at the assignment that maximised overall AP50.
-  That is **not** an oracle for those metrics; use `--area small` for a real one.
+  That is **not** an oracle for those metrics. The genuine small-object oracle is
+  [§11](#11-small-object-oracle--is-the-penalty-a-small-object-effect); run it with
+  `--area small --tag small`. The tag is not optional — without it the run overwrites the
+  committed all-area assignment `.npy` files that the published ΔAP rests on.
 * RT-DETR uses stretch-to-square preprocessing, not letterbox, and de-normalises against
   the canvas rather than `imgsz`. Handled, but do not read its absolute numbers as directly
   comparable to the YOLO arms.
@@ -880,6 +1015,10 @@ numbers: baseline AP 43.8 / AP50 64.2; at M=15, ΔAP 8.3 and ΔAP50 21.5. Two ob
 worth checking on our detectors: the envelope grows **sub-linearly** with max shift, and
 best/worst are roughly **symmetric about the baseline** (the unshifted number behaves like
 an average case, not a best case). `make m-ladder` reproduces the protocol.
+
+**Both hold on yolo26n, on both heads** — see [§12](#12-max-shift-ladder--meeting-manfredi--wang-on-their-protocol)
+for the numbers. Our image set is the frozen seed-0 subset rather than a random draw, so it
+is deterministic where theirs was not.
 
 They released no code — detectron2 is cited for the detectors, not for the metric — so
 `shifteq/oracle.py` is a from-scratch reimplementation of Algorithm 1 and should be read as
