@@ -32,12 +32,24 @@ Reference values from Manfredi & Wang (COCO val, M=1): RetinaNet dAP 2.2 / dAP50
 
 | model | head | M | N | area | baseline_AP | AP_worst | AP_best | dAP | dAP50 | comparable |
 |---|---|---|---|---|---|---|---|---|---|---|
+| yolo26n | e2e | 15 | 100 | all | 45.24 | 35.85 | 50.33 | 14.48 | 25.14 | False |
 | yolo26n | e2e | 1 | 5000 | all | 40.25 | 38.18 | 41.94 | 3.76 | 6.96 | True |
 | yolo26n | e2e | 1 | 5000 | all | 40.25 | 38.12 | 41.96 | 3.83 | 7.14 | True |
+| yolo26n | e2e | 1 | 5000 | small | 19.89 | 16.94 | 23.02 | 6.08 | 12.16 | False |
+| yolo26n | e2e | 1 | 100 | all | 45.24 | 43.58 | 47.05 | 3.47 | 6.04 | True |
+| yolo26n | e2e | 3 | 100 | all | 45.24 | 40.39 | 48.51 | 8.12 | 12.89 | False |
+| yolo26n | e2e | 7 | 100 | all | 45.24 | 37.64 | 49.68 | 12.04 | 18.84 | False |
+| yolo26n | nms | 15 | 100 | all | 45.98 | 38.49 | 51.47 | 12.98 | 22.93 | False |
 | yolo26n | nms | 1 | 5000 | all | 40.90 | 39.23 | 42.48 | 3.25 | 6.08 | True |
 | yolo26n | nms | 1 | 5000 | all | 40.90 | 39.19 | 42.53 | 3.34 | 6.26 | True |
+| yolo26n | nms | 1 | 5000 | small | 20.93 | 18.40 | 23.70 | 5.30 | 11.26 | False |
+| yolo26n | nms | 1 | 100 | all | 45.98 | 44.45 | 48.12 | 3.67 | 6.23 | True |
+| yolo26n | nms | 3 | 100 | all | 45.98 | 41.95 | 48.97 | 7.02 | 12.13 | False |
+| yolo26n | nms | 7 | 100 | all | 45.98 | 40.15 | 50.46 | 10.31 | 17.19 | False |
 | yolov10n | e2e | 1 | 5000 | all | 38.45 | 36.57 | 40.24 | 3.67 | 6.57 | True |
+| yolov10n | e2e | 1 | 5000 | small | 19.11 | 16.45 | 21.78 | 5.32 | 10.56 | False |
 | yolov10n | nms | 1 | 5000 | all | 39.52 | 38.10 | 40.99 | 2.89 | 5.49 | True |
+| yolov10n | nms | 1 | 5000 | small | 20.01 | 18.08 | 22.82 | 4.74 | 9.81 | False |
 
 ## Table 2 - Uniform-shift curve AP(delta)
 

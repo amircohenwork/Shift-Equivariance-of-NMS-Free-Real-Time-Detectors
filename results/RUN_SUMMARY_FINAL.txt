@@ -1,0 +1,62 @@
+==============================================================
+ final batch summary   2026-08-19T16:41:50+03:00
+ protocol v1.2.0 §12   (small-object oracle + max-shift ladder)
+==============================================================
+
+--- stages reached ---
+  reached  FINAL_PREFLIGHT_DONE
+  reached  FINAL_SMALL_DONE
+  reached  FINAL_LADDER_e2e_DONE
+  reached  FINAL_LADDER_nms_DONE
+  reached  FINAL_LADDER_DONE
+  reached  ALL_WORK_DONE
+
+--- errors in any batch log ---
+  none
+
+--- §12 verdicts, as the script read them against the pre-registration ---
+16:41:40 | INFO    | === 12.1 small-object oracle ===
+16:41:40 | INFO    |   prediction: delta(e2e) > delta(nms) on both checkpoints, and the relative gap exceeds the all-area relative gap (+15.4% yolo26n, +26.8% yolov10n)
+16:41:40 | INFO    |   yolo26n   small: e2e 6.0827 vs nms 5.3022  (+14.7%)   | all-area was +15.4%
+16:41:40 | INFO    |             dAP50 ratio (secondary): small +8.0% | all-area +14.5%
+16:41:40 | INFO    |             -> partial -- e2e worse on small objects, but the gap did not widen
+16:41:40 | INFO    |   yolov10n  small: e2e 5.3236 vs nms 4.7375  (+12.4%)   | all-area was +26.8%
+16:41:40 | INFO    |             dAP50 ratio (secondary): small +7.6% | all-area +19.6%
+16:41:40 | INFO    |             -> partial -- e2e worse on small objects, but the gap did not widen
+16:41:40 | INFO    | === 12.2 max-shift ladder ===
+16:41:40 | INFO    |   yolo26n/e2e  M= 1    4 shifts   dAP= 3.471  dAP50= 6.044   best−base=+3.006  base−worst=+3.038
+16:41:40 | INFO    |   yolo26n/e2e  M= 3   16 shifts   dAP= 8.119  dAP50=12.888   best−base=+6.243  base−worst=+6.645
+16:41:40 | INFO    |   yolo26n/e2e  M= 7   64 shifts   dAP=12.040  dAP50=18.843   best−base=+8.867  base−worst=+9.976
+16:41:40 | INFO    |   yolo26n/e2e  -> shape matches Manfredi & Wang
+16:41:40 | INFO    |   yolo26n/nms  M= 1    4 shifts   dAP= 3.669  dAP50= 6.234   best−base=+3.117  base−worst=+3.118
+16:41:40 | INFO    |   yolo26n/nms  M= 3   16 shifts   dAP= 7.017  dAP50=12.131   best−base=+5.525  base−worst=+6.606
+16:41:40 | INFO    |   yolo26n/nms  M= 7   64 shifts   dAP=10.310  dAP50=17.188   best−base=+8.145  base−worst=+9.043
+16:41:40 | INFO    |   yolo26n/nms  -> shape matches Manfredi & Wang
+
+--- §12.1 raw: small-object oracle vs the committed all-area oracle ---
+  yolo26n/e2e  small dAP= 6.0827  dAP50=12.1552   | all-area dAP= 3.7555  dAP50= 6.9561
+  yolo26n/nms  small dAP= 5.3022  dAP50=11.2570   | all-area dAP= 3.2537  dAP50= 6.0758
+  yolov10n/e2e  small dAP= 5.3236  dAP50=10.5649   | all-area dAP= 3.6704  dAP50= 6.5653
+  yolov10n/nms  small dAP= 4.7375  dAP50= 9.8148   | all-area dAP= 2.8937  dAP50= 5.4903
+  (published all-area gaps: yolo26n e2e/nms +15.4%, yolov10n +26.8%)
+  (prediction: the SMALL gap should be LARGER than these)
+
+--- §12.2 raw: the ladder, read as a shape ---
+  yolo26n/e2e M= 1    4 shifts  dAP= 3.471  dAP50= 6.044  best-base=+3.006  base-worst=+3.038
+  yolo26n/e2e M= 3   16 shifts  dAP= 8.119  dAP50=12.888  best-base=+6.243  base-worst=+6.645
+  yolo26n/e2e M= 7   64 shifts  dAP=12.040  dAP50=18.843  best-base=+8.867  base-worst=+9.976
+  yolo26n/e2e M=15  256 shifts  dAP=14.476  dAP50=25.137  best-base=+11.858  base-worst=+13.278
+  yolo26n/nms M= 1    4 shifts  dAP= 3.669  dAP50= 6.234  best-base=+3.117  base-worst=+3.118
+  yolo26n/nms M= 3   16 shifts  dAP= 7.017  dAP50=12.131  best-base=+5.525  base-worst=+6.606
+  yolo26n/nms M= 7   64 shifts  dAP=10.310  dAP50=17.188  best-base=+8.145  base-worst=+9.043
+  yolo26n/nms M=15  256 shifts  dAP=12.979  dAP50=22.932  best-base=+10.440  base-worst=+12.491
+  (Manfredi & Wang RetinaNet, 100 imgs: baseline AP 43.8 / AP50 64.2;
+   at M=15, dAP 8.3 and dAP50 21.5. Shape only -- different detector, different images.)
+  (predictions: dAP50 monotone AND sub-linear in M; the two envelope arms roughly equal)
+
+--- last watchdog state ---
+watchdog 16:41:27   (poll 60s, stall threshold 900s)
+  stage      : python scripts/04_oracle.py --run-id yolo26n_nms_m15s1_n100_pad114 --device 0 --no-size-summary   [process alive]
+  progress   : 64 rows in yolo26n_nms_m63s1_n1000_pad-2_y.jsonl, idle 481s
+  finished   : FINAL_PREFLIGHT_DONE FINAL_SMALL_DONE FINAL_LADDER_e2e_DONE
+  disk / gpu : 57G free | 33 %, 432 MiB

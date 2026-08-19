@@ -54,7 +54,11 @@ def collect_oracle(d: Path) -> list[dict]:
             "AP50_worst": r["delta"]["AP50_worst"] * 100, "AP50_best": r["delta"]["AP50_best"] * 100,
             "dAP50": r["delta"]["dAP50"] * 100,
             "baseline_AP": r["baseline"]["AP"] * 100,
-            "comparable": r.get("comparable_to_manfredi_wang", False),
+            # Derived, not trusted: reports written before the area range entered this
+            # flag recorded True for a small-object run at M=1, which is not comparable
+            # to their all-area Table 1.
+            "comparable": bool(r.get("comparable_to_manfredi_wang", False)
+                               and r.get("area", "all") == "all"),
             "file": p.name,
         })
     return out

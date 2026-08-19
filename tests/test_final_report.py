@@ -138,3 +138,32 @@ def test_ladder_needs_two_rungs_before_claiming_a_shape(tmp_path, monkeypatch):
     monkeypatch.setattr(fr, "ORACLE_DIR", tmp_path)
     _plant_ladder(tmp_path, "e2e", {1: 6.0})
     assert "not enough rungs" in fr.ladder()["heads"]["e2e"]["verdict"]
+
+
+# ------------------------------------------------------- the comparability column
+def test_a_small_area_run_is_not_comparable_to_manfredi_wang(tmp_path):
+    """Their Table 1 is max_shift=1 over ALL areas.
+
+    A small-object envelope at M=1 satisfies the max_shift half of that and nothing else,
+    and the flag as originally written recorded it as comparable. Quoting ΔAP_small against
+    their all-area table would be a category error, so the report derives the column rather
+    than trusting what an older run wrote into its JSON.
+    """
+    import importlib.util as iu
+
+    spec = iu.spec_from_file_location("report", ROOT / "scripts" / "06_report.py")
+    rep = iu.module_from_spec(spec)
+    spec.loader.exec_module(rep)
+
+    base = {"model": "yolo26n", "head": "e2e", "max_shift": 1, "n_images": 5000,
+            "objective": "AP50", "baseline": {"AP": 0.4, "AP50": 0.55},
+            "delta": {"dAP": 0.06, "dAP50": 0.12, "AP_best": 0.23, "AP_worst": 0.17,
+                      "AP50_best": 0.40, "AP50_worst": 0.28}}
+    # Both claim comparable_to_manfredi_wang=True, as a pre-fix run would have.
+    write_json(tmp_path / "small.json", {**base, "area": "small",
+                                         "comparable_to_manfredi_wang": True})
+    write_json(tmp_path / "all.json", {**base, "area": "all",
+                                       "comparable_to_manfredi_wang": True})
+    rows = {r["area"]: r["comparable"] for r in rep.collect_oracle(tmp_path)}
+    assert rows["all"] is True
+    assert rows["small"] is False, "a small-area envelope is not their Table 1"

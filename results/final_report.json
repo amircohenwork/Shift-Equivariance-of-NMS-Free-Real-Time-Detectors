@@ -1,0 +1,255 @@
+{
+  "figure": "results/figures/ladder.png",
+  "ladder": {
+    "heads": {
+      "e2e": {
+        "dAP50_monotone_in_M": true,
+        "dAP50_per_M": [
+          6.044371350085376,
+          4.296052659497218,
+          2.6918280232566785,
+          1.675779021036668
+        ],
+        "dAP50_sublinear_in_M": true,
+        "dAP_monotone_in_M": true,
+        "max_envelope_asymmetry": 0.11776993859887551,
+        "mean_envelope_asymmetry": 0.07593923529086082,
+        "rungs": [
+          {
+            "AP50_best": 63.54159385692637,
+            "AP50_worst": 57.497222506841,
+            "M": 1,
+            "baseline_AP": 45.243823849809374,
+            "baseline_AP50": 60.53547510456835,
+            "dAP": 3.47065127288656,
+            "dAP50": 6.044371350085376,
+            "gain_above_baseline": 3.00611875235802,
+            "loss_below_baseline": 3.0382525977273502,
+            "n_shifts": 4
+          },
+          {
+            "AP50_best": 66.77851601679333,
+            "AP50_worst": 53.89035803830168,
+            "M": 3,
+            "baseline_AP": 45.243823849809374,
+            "baseline_AP50": 60.53547510456835,
+            "dAP": 8.119475916204067,
+            "dAP50": 12.888157978491655,
+            "gain_above_baseline": 6.243040912224984,
+            "loss_below_baseline": 6.645117066266671,
+            "n_shifts": 16
+          },
+          {
+            "AP50_best": 69.4020944491858,
+            "AP50_worst": 50.55929828638905,
+            "M": 7,
+            "baseline_AP": 45.243823849809374,
+            "baseline_AP50": 60.53547510456835,
+            "dAP": 12.039945627138227,
+            "dAP50": 18.84279616279675,
+            "gain_above_baseline": 8.866619344617447,
+            "loss_below_baseline": 9.976176818179297,
+            "n_shifts": 64
+          },
+          {
+            "AP50_best": 72.39395974252754,
+            "AP50_worst": 47.257274426977524,
+            "M": 15,
+            "baseline_AP": 45.243823849809374,
+            "baseline_AP50": 60.53547510456835,
+            "dAP": 14.476175990096813,
+            "dAP50": 25.13668531555002,
+            "gain_above_baseline": 11.858484637959194,
+            "loss_below_baseline": 13.278200677590824,
+            "n_shifts": 256
+          }
+        ],
+        "verdict": "shape matches Manfredi & Wang"
+      },
+      "nms": {
+        "dAP50_monotone_in_M": true,
+        "dAP50_per_M": [
+          6.234176385851187,
+          4.0436328624464,
+          2.4554148303848975,
+          1.52877053237356
+        ],
+        "dAP50_sublinear_in_M": true,
+        "dAP_monotone_in_M": true,
+        "max_envelope_asymmetry": 0.1788696993181233,
+        "mean_envelope_asymmetry": 0.11547060700683347,
+        "rungs": [
+          {
+            "AP50_best": 65.72142808459164,
+            "AP50_worst": 59.48725169874045,
+            "M": 1,
+            "baseline_AP": 45.979192678090556,
+            "baseline_AP50": 62.60482485116994,
+            "dAP": 3.6686395398292273,
+            "dAP50": 6.234176385851187,
+            "gain_above_baseline": 3.1166032334216993,
+            "loss_below_baseline": 3.117573152429486,
+            "n_shifts": 4
+          },
+          {
+            "AP50_best": 68.12949885171909,
+            "AP50_worst": 55.998600264379895,
+            "M": 3,
+            "baseline_AP": 45.979192678090556,
+            "baseline_AP50": 62.60482485116994,
+            "dAP": 7.0174659551618115,
+            "dAP50": 12.1308985873392,
+            "gain_above_baseline": 5.524674000549155,
+            "loss_below_baseline": 6.6062245867900415,
+            "n_shifts": 16
+          },
+          {
+            "AP50_best": 70.75022310241839,
+            "AP50_worst": 53.5623192897241,
+            "M": 7,
+            "baseline_AP": 45.979192678090556,
+            "baseline_AP50": 62.60482485116994,
+            "dAP": 10.310215073068823,
+            "dAP50": 17.187903812694284,
+            "gain_above_baseline": 8.145398251248452,
+            "loss_below_baseline": 9.042505561445836,
+            "n_shifts": 64
+          },
+          {
+            "AP50_best": 73.04516362352639,
+            "AP50_worst": 50.11360563792299,
+            "M": 15,
+            "baseline_AP": 45.979192678090556,
+            "baseline_AP50": 62.60482485116994,
+            "dAP": 12.979445742951,
+            "dAP50": 22.9315579856034,
+            "gain_above_baseline": 10.440338772356455,
+            "loss_below_baseline": 12.49121921324695,
+            "n_shifts": 256
+          }
+        ],
+        "verdict": "shape matches Manfredi & Wang"
+      }
+    },
+    "max_shifts": [
+      1,
+      3,
+      7,
+      15
+    ],
+    "model": "yolo26n",
+    "n_images": 100,
+    "reference": {
+      "baseline_AP": 43.8,
+      "baseline_AP50": 64.2,
+      "dAP50_at_15": 21.5,
+      "dAP_at_15": 8.3
+    }
+  },
+  "small_oracle": {
+    "arms": {
+      "yolo26n:e2e": {
+        "all": {
+          "dAP": 3.7554573736126584,
+          "dAP50": 6.956136679226899
+        },
+        "small": {
+          "AP_best": 23.02465914293492,
+          "AP_worst": 16.9419994991821,
+          "baseline_AP": 19.88844820951447,
+          "dAP": 6.0826596437528195,
+          "dAP50": 12.155176801453804
+        }
+      },
+      "yolo26n:nms": {
+        "all": {
+          "dAP": 3.2536939457588177,
+          "dAP50": 6.075842698707912
+        },
+        "small": {
+          "AP_best": 23.70006223793589,
+          "AP_worst": 18.397903112068093,
+          "baseline_AP": 20.928198857603387,
+          "dAP": 5.302159125867798,
+          "dAP50": 11.257016816069248
+        }
+      },
+      "yolov10n:e2e": {
+        "all": {
+          "dAP": 3.6703535927717246,
+          "dAP50": 6.565266891680466
+        },
+        "small": {
+          "AP_best": 21.775312446482666,
+          "AP_worst": 16.451705602318402,
+          "baseline_AP": 19.113525847490774,
+          "dAP": 5.323606844164266,
+          "dAP50": 10.564858564440637
+        }
+      },
+      "yolov10n:nms": {
+        "all": {
+          "dAP": 2.8937060365558818,
+          "dAP50": 5.490284391429546
+        },
+        "small": {
+          "AP_best": 22.82160313655279,
+          "AP_worst": 18.084092013386677,
+          "baseline_AP": 20.007994070032083,
+          "dAP": 4.737511123166113,
+          "dAP50": 9.81479551457643
+        }
+      }
+    },
+    "checkpoints": {
+      "yolo26n": {
+        "all": {
+          "dAP50_e2e": 6.956136679226899,
+          "dAP50_nms": 6.075842698707912,
+          "dAP50_ratio_pct": 14.488426119165165,
+          "dAP_e2e": 3.7554573736126584,
+          "dAP_gap": 0.5017634278538408,
+          "dAP_nms": 3.2536939457588177,
+          "dAP_ratio_pct": 15.421346820523429
+        },
+        "direction_holds": true,
+        "gap_widened_vs_all_area": false,
+        "small": {
+          "dAP50_e2e": 12.155176801453804,
+          "dAP50_nms": 11.257016816069248,
+          "dAP50_ratio_pct": 7.978667883861057,
+          "dAP_e2e": 6.0826596437528195,
+          "dAP_gap": 0.780500517885022,
+          "dAP_nms": 5.302159125867798,
+          "dAP_ratio_pct": 14.720428024824294
+        },
+        "verdict": "partial -- e2e worse on small objects, but the gap did not widen"
+      },
+      "yolov10n": {
+        "all": {
+          "dAP50_e2e": 6.565266891680466,
+          "dAP50_nms": 5.490284391429546,
+          "dAP50_ratio_pct": 19.579723446184172,
+          "dAP_e2e": 3.6703535927717246,
+          "dAP_gap": 0.7766475562158428,
+          "dAP_nms": 2.8937060365558818,
+          "dAP_ratio_pct": 26.839200195339007
+        },
+        "direction_holds": true,
+        "gap_widened_vs_all_area": false,
+        "small": {
+          "dAP50_e2e": 10.564858564440637,
+          "dAP50_nms": 9.81479551457643,
+          "dAP50_ratio_pct": 7.642166856663013,
+          "dAP_e2e": 5.323606844164266,
+          "dAP_gap": 0.586095720998153,
+          "dAP_nms": 4.737511123166113,
+          "dAP_ratio_pct": 12.371384589097524
+        },
+        "verdict": "partial -- e2e worse on small objects, but the gap did not widen"
+      }
+    },
+    "prediction": "delta(e2e) > delta(nms) on both checkpoints, and the relative gap exceeds the all-area relative gap (+15.4% yolo26n, +26.8% yolov10n)",
+    "primary_quantity": "dAP ratio"
+  }
+}

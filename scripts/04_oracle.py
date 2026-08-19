@@ -156,7 +156,10 @@ def main():
         "detections": store.fingerprint(),
         "baseline": {"AP": baseline_ap, "AP50": baseline_ap50},
         "shifts": [list(s) for s in grid],
-        "comparable_to_manfredi_wang": man.max_shift == 1,
+        # Their Table 1 is max_shift=1 over ALL areas. A small-object envelope sits on a
+        # different AP scale entirely (PROTOCOL section 12.1), so M=1 alone does not make
+        # a run comparable to them -- quoting dAP_small against their table would be wrong.
+        "comparable_to_manfredi_wang": man.max_shift == 1 and args.area == "all",
     }
     for d, r in results.items():
         report[d] = {
