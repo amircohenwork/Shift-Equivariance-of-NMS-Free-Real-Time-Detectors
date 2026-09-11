@@ -12,7 +12,14 @@ runs/
 *.partial
 logs/
 
-# results/ IS committed -- it is the evidence for the numbers in the README.
+# results/ IS committed -- it is the evidence for the numbers in RESULTS.md.
 # Only the bulky per-shift detection caches under cache/ are excluded.
+
+# The course report is not part of this repository. It is written and submitted
+# separately; RESULTS.md is the write-up that lives here.
+FINAL_REPORT.*
+
+# regenerable: scripts/15_paper_figures.py rebuilds these from results/
+figures/alt/
 
 .DS_Store

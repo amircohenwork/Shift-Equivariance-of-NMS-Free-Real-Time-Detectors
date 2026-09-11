@@ -1,7 +1,7 @@
 # Frozen Experimental Protocol — v1.2.0
 
 **Status: FROZEN.** v1.0.0 was frozen on 2026-08-15 and produced every yolo26n number in
-`results/` and `README.md`. v1.1.0 (2026-08-17) added §10 and §11 — the analysis plans for
+`results/` and `RESULTS.md`. v1.1.0 (2026-08-17) added §10 and §11 — the analysis plans for
 the cross-model check and the padding ablation. v1.2.0 (2026-08-19) **adds** §12, the two
 remaining variations §9 has declared as intended since v1.0.0: the small-object oracle and
 the max-shift ladder. **No v1.0.0 or v1.1.0 value was changed**, so every result already
@@ -463,6 +463,6 @@ and the README says so. This is the real one.
 
 | version | date | change |
 |---|---|---|
-| 1.0.0 | 2026-08-15 | Initial freeze. Protocol under which all results in `results/` and `README.md` were produced. |
+| 1.0.0 | 2026-08-15 | Initial freeze. Protocol under which all results in `results/` and `RESULTS.md` were produced. |
 | 1.1.0 | 2026-08-17 | Added §10 (cross-model check) and §11 (padding ablation). Both were already declared as intended variations in §9 of v1.0.0; v1.1.0 specifies the analysis for them. Written **after** the yolo26n full-validation results were known and **before** any cross-model or padding sweep had been run. Nothing about the yolo26n analysis changed. |
 | 1.2.0 | 2026-08-19 | Added §12 — the small-object oracle and the max-shift ladder, the last two variations §9 declared in v1.0.0. States what each predicts and what would refute it, written **before either was run**. No v1.0.0 or v1.1.0 value changed. |
