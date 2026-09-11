@@ -9,7 +9,7 @@ The question is answerable without confounds because the YOLO26 and YOLOv10 dual
 **both** inference paths on **one released checkpoint** — backbone, neck and weights are
 byte-identical across the head switch, verified here by state-dict fingerprint — so **the
 aggregation head is the only variable**. Existing anti-aliasing results in detection compare
-differently *trained* networks; this comparison does not. To our knowledge this is the first
+differently *trained* networks, this comparison does not. To our knowledge this is the first
 shift-equivariance study of one-to-one NMS-free detectors.
 
 No training is involved: everything is inference over public pretrained checkpoints, about
