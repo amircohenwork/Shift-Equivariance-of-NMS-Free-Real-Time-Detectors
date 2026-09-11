@@ -1,12 +1,298 @@
 # Full results, method and lab notes
 
-The complete record: every measurement this project produced, how each was made, and the
-de-risking that had to pass before any of it was trusted. Start at [`README.md`](README.md)
+The complete record: how every measurement was made, the de-risking that had to pass
+before any of it was trusted, and then the measurements themselves. Start at [`README.md`](README.md)
 if you want the short version or the reproduction commands.
 
 Read [`PROTOCOL.md`](PROTOCOL.md) first. It is the frozen pre-registration (v1.2.0, hash
 `73bd33e5c129e367`); every threshold and every deviation from Manfredi & Wang was pinned
 there before these results were read.
+
+---
+
+## Method
+
+### Two metric families, never mixed
+
+| | `shifteq/oracle.py` | `shifteq/sweep.py` |
+|---|---|---|
+| quantity | ΔAP = AP_best − AP_worst | AP(δ) curve |
+| shift choice | **per image, adversarial** (greedy Alg. 1) | **the same δ for every image** |
+| what it answers | how far can shift-selection move AP at all | what a translation costs in deployment |
+| comparable to | Manfredi & Wang Tab. 1, at M=1 only | nothing published; ours |
+| cost driver | `K × (M+1)² × N` AP evaluations | `grid × N` forward passes |
+
+`AP_best` is the maximum AP achievable by choosing the best shift for **each image
+independently**, found greedily because AP couples images through one global score ranking.
+It is an *oracle envelope*, systematically wider than `max(AP(δ)) − min(AP(δ))` over the
+uniform grid — measured here at ~3×. Quoting one as the other, in either direction, is
+wrong; `06_report.py` puts them in separate tables on purpose.
+
+**The selection objective is AP50, not AP.** Easy to miss and it changes the numbers.
+Manfredi & Wang Sec. 3.1: *"In practice, we use AP50 as the metric"*. The greedy search
+optimises AP50; the AP (0.50:0.95) column of their Table 1 is AP read off *at the
+assignment AP50 chose*. They confirm the side-effect in Sec. 4.1 — ΔAP50 grows
+monotonically with max shift but ΔAP does not, *"a result of our evaluation metric, that
+uses AP50 to find best and worst shifts"*. `--objective` defaults to `AP50`.
+
+### Making 20,000 full-dataset AP evaluations affordable
+
+At M=1 on COCO val the oracle needs `1 × 4 × 5000 = 20,000` full-dataset AP evaluations per
+direction. That, not the GPU time, is the bottleneck. Three things make it cost minutes:
+
+* IoU matching is per-image independent, so it is computed **once per (image, shift)** and
+  cached as bitmasks over the 10 IoU thresholds;
+* all shifts go into **one globally sorted union table**, so selecting an assignment is a
+  boolean mask over data already in rank order — no re-sorting per candidate;
+* accumulation runs on numpy or, by default when a GPU is present, on torch.
+
+Measured: **32.3 ms per full-dataset AP evaluation** (union table of 2.65M rows) → 11 min
+per direction, ~22 min for AP_best + AP_worst per head. Inference for the whole M=1 grid is
+62 s. `shifteq/pipeline.py` additionally overlaps GPU inference for δ_{k+1} with pooled CPU
+evaluation of δ_k during the sweep, so the CPU half is free.
+
+### Shift protocol
+
+Manfredi & Wang do not crop to shift — they embed each image in a **larger** canvas at
+offset δ (Fig. 2), following Azulay & Weiss. That matters for detection: cropping a few
+pixels can remove part of an object and change the ground truth, confounding "the detector
+moved its answer" with "the input lost information". We keep that and adapt it to a YOLO
+pipeline:
+
+```
+original image --[Ultralytics val letterbox]--> 640 x 640
+               --[paste at (dy, dx)]----------> 672 x 672    (canvas = ceil((640+M)/32)*32)
+```
+
+* the canvas is stride-aligned and **constant across shifts**, so the anchor grid never
+  changes shape — only the content moves;
+* two embedding modes, both strictly no-crop: `grow` (frozen default — letterbox to 640,
+  canvas 672; full resolution, but a non-validated input size, costing +0.03/+0.07 AP) and
+  `fit` (letterbox to 609, canvas 640; the validated input size at ~5% less resolution).
+  Select with `--embed-mode`; see [`PROTOCOL.md` §1](PROTOCOL.md) for the deviations from
+  Manfredi & Wang, including gray-114 fill rather than black;
+* shifts are `(dy, dx)` in `[0, M]²`, non-negative because the canvas grows toward the
+  bottom-right;
+* predictions are de-shifted (`−δ`, then the inverse letterbox) and evaluated against
+  **unmodified** COCO ground truth, so the cache is directly comparable across shifts;
+* `--pad-value` sets both the letterbox border and the canvas border together (`114`
+  default, `0`, any constant, `-1` replicate, `-2` reflect). Constant padding is an implicit
+  absolute-position cue (Kayhan & van Gemert, CVPR'20); replicate/reflect remove it while
+  keeping the geometry identical.
+
+### Metric definitions we chose
+
+Flicker and jitter are **not** standardised; these are choices. They are pinned in
+[`PROTOCOL.md` §6–7](PROTOCOL.md), including the exact greedy matching algorithm, crowd
+handling, and tie-breaks. Summary:
+
+* `detected(g, δ)` — a de-shifted prediction exists with the same class, IoU ≥ 0.5, and
+  score ≥ τ. τ is a real knob: at COCO's evaluation threshold of 0.001 almost nothing ever
+  drops out, so flicker measured there is meaningless. Default τ = 0.25, the Ultralytics
+  predict-time default.
+* **flicker rate** — fraction of GT whose `detected(g, ·)` is not constant over the grid.
+* **dropout rate** — fraction of GT detected at δ=(0,0) that are missed at ≥ 1 shift. The
+  "your baseline number was partly luck" statistic.
+* **class flip rate** — fraction of GT assigned more than one distinct class across shifts
+  by their best class-agnostic match.
+* **box jitter** — per-GT standard deviation of each de-shifted coordinate, averaged over
+  the 4 coordinates, in original-image pixels; also normalised by `sqrt(GT area)`.
+
+A perfectly shift-equivariant detector scores 0 on all four.
+
+**Stability Index** (`shifteq/stabindex.py`). Flicker is binary and jitter is a bare
+standard deviation; neither says *what kind* of instability a detector has. We adapt the SI
+of *Towards Stable 3D Object Detection* (arXiv:2407.04305 — the source of the "stability
+decorrelates from accuracy" claim) to 2-D shift pairs:
+
+```
+SI_c = max(0, 1 - |c1 - c2| / (c^0.99 - c^0.01))      confidence
+SI_l = IoU(B1_loc, B2_loc)                            centre moves, extent pinned to GT
+SI_e = IoU(B1_ext, B2_ext)                            extent moves, centre pinned to GT
+SI2D = SI_c * (SI_l + SI_e) / 2                       (their SI_h has no 2-D analogue)
+```
+
+with SI = 0 when an object is predicted in one member of the pair but not the other — a
+missed detection is maximal instability, not missing data. The decomposition is the point:
+`SI_c` says the *score* moved (aggregation), `SI_l`/`SI_e` say the *box* moved (backbone
+sampling, shared by both heads). `--si-mode ref` pairs every δ against δ=(0,0);
+`--si-mode adjacent` pairs neighbouring grid points.
+
+**Shift test-time augmentation** (`shifteq/tta.py`). Manfredi & Wang Sec. 5.4 turn shift
+variance into a feature: run the shifts, map predictions back, merge with NMS. That lands
+awkwardly on a one-to-one detector, and the awkwardness is the finding — merging across
+shifts *is* a duplicate-removal problem. We merge three ways (`nms`, `topk`, `vote`) and
+report all of them; the headline is `nms` vs `topk` on identical detections.
+
+---
+
+## Phase 0 — de-risk (run before anything else)
+
+### Gate A — reproduce the published numbers
+
+Runs **Ultralytics' own validator**, not ours, for both heads. The published protocol turns
+out to be `rect=True`, which `cfg/default.yaml` leaves ambiguous (it sets `rect: False` but
+comments "rectangular batching for val when mode='val'"):
+
+| protocol | e2e | nms |
+|---|---|---|
+| square (`rect=False`) | 40.255 | 40.867 |
+| **`rect=True`** (gate) | **40.044** (published 40.1, −0.06) | **40.813** (published 40.9, −0.09) |
+
+Gate: both within `--tol` (default 0.1 AP). **Passed.**
+
+The square number is what our harness must match, because the canvas protocol needs a fixed
+input size and per-batch shapes would make it depend on batch composition. Note the
+square-vs-rect gap is **4× larger for the one-to-one head** (+0.21) than the one-to-many
+head (+0.05): the heads already disagree about what gray padding costs them, before any
+shift is applied.
+
+#### Gate A for the cross-check models
+
+No model's shift behaviour is quoted before it reproduces its published COCO AP — otherwise
+"this detector is unstable" could just be a loading bug. `make phase0-cross`:
+
+| model | head | ours | published | Δ | gate |
+|---|---|---|---|---|---|
+| YOLOv8-N | nms | 37.391 | 37.3 | **+0.091** | pass |
+| YOLO11-N | nms | 39.421 | 39.5 | **−0.079** | pass |
+| YOLOv10-N | e2e | 38.477 | 38.5 | **−0.023** | pass |
+| YOLOv10-N | nms | 39.464 | — | — | no published target |
+| RT-DETR-L | e2e | 52.766 | 53.0 | **−0.234** | see below |
+
+**YOLOv10-N's one-to-many branch has no published number.** It ships in the checkpoint but
+was never tabulated, so it is measured without a target. Its accuracy head gap is
+**+0.987 AP** (nms − e2e), close to yolo26n's **+0.77** — the same trade, on a different
+checkpoint.
+
+**RT-DETR-L misses the 0.1 tolerance, and the reason is upstream.** Its published 53.0 is the
+RT-DETR-R50 number from the original paper's *PaddlePaddle* evaluation, which Ultralytics
+quotes for their PyTorch port rather than re-measuring. The 52.766 above is Ultralytics'
+own validator on Ultralytics' own checkpoint, and a protocol ladder
+(`results/phase0/rtdetr_protocol_probe.json`) shows the residual is not a threshold
+artefact — the model emits exactly 300 queries, all scoring above 0.001, so AP is
+**identical** at `conf` ∈ {0.001, 0} and `max_det` ∈ {300, 1000}:
+
+| conf | max_det | AP |
+|---|---|---|
+| 0.001 | 300 | 52.766 |
+| 0 | 300 | 52.766 |
+| 0 | 1000 | 52.766 |
+| 0.001 | 100 | 52.584 |
+
+Its gate tolerance is therefore declared as 0.3 in `PROTOCOL.md §10.3` rather than loosened
+silently, and **no absolute-AP claim is made from that arm** — it contributes only to the
+universality question, which is about the *shape* of AP(δ), not its level. A preprocessing
+mistake would cost whole AP points, not a quarter of one.
+
+#### One upstream bug had to be fixed to run RT-DETR at all
+
+`RTDETRDecoder` caches its anchor grid and validity mask as **plain attributes**, keyed on
+the feature-map shapes. `nn.Module.to()` moves parameters and registered buffers, not plain
+attributes — and Ultralytics runs a CPU forward at 640×640 inside
+`get_flops_with_torch_profiler` while printing the model summary, *before* the model reaches
+the GPU. The cache is populated on CPU with exactly the shapes validation will use, the
+regeneration branch is skipped, and the first CUDA forward dies with `Expected all tensors
+to be on the same device`. `shifteq.modelzoo.fix_rtdetr_anchor_cache` sets `dynamic`, which
+rebuilds the grid per forward from `feats.device`. It is a cache-invalidation flag, not a
+numerics change: the regenerated tensors are the ones the cache was supposed to hold.
+Reproduced and verified on ultralytics 8.4.120 / torch 2.13.
+
+### Gate B — the harness is a faithful, invertible wrapper
+
+| gate | assertion | result |
+|---|---|---|
+| B1 preprocessing identity | our tensor == Ultralytics' dataloader tensor, byte-for-byte, plus `ratio_pad` | 0 mismatches on **all 5000 images** |
+| B2 de-shift round-trip | `deshift(shift(b, δ), δ) == b` for all δ, both preprocessing families | max error 6e-5 px |
+| B2b map equivariance | a canvas box translated by exactly δ de-shifts to the same box | max error 6e-6 px |
+| B3 determinism | two runs of the same δ produce byte-identical detections | pass |
+| B4 evaluator agreement | our COCO AP == faster-coco-eval on the same predictions | **1.1e-16** |
+| B5 no fusion | BatchNorms intact, both branches present, weights unchanged across head switch | 114 BN, fingerprint stable |
+| B6 canvas effect | measured, **not** asserted — see below | +0.029 e2e / +0.068 nms (full val) |
+
+### Read this before quoting "δ=(0,0) reproduces the baseline bit-exactly"
+
+True for exactly one configuration, false for the one you will actually run:
+
+* **`max_shift = 0`** → canvas == imgsz == 640. The harness degenerates to the stock
+  Ultralytics val pipeline, so δ=(0,0) *is* the baseline and equality is bit-exact. That is
+  gates B1/B3/B4 and they are real assertions.
+* **`max_shift = 31`** → canvas == 672. δ=(0,0) places the image at the top-left of a
+  672×672 canvas with a 32-px gray border. That is **not** the baseline input: boundary
+  convolutions see different context and the anchor grid is 84×84 instead of 80×80.
+  Demanding bit-exactness there is demanding that padding have no effect — which is
+  precisely the hypothesis the padding ablation exists to test. B6 therefore *measures*
+  `AP(canvas=672, δ=0) − AP(canvas=640)` and reports it as a result. **On the full
+  validation set that cost is +0.029 AP (e2e) and +0.068 (nms)** — the widely-quoted
+  "+0.225" is the e2e value from B6's 500-image probe and did not survive the full set,
+  which is what a 500-image AP estimate should be expected to do.
+
+What is bit-exact in **every** configuration is the geometry: preprocessing (B1) and the
+de-shift inverse map (B2/B2b). With those pinned, any residual difference between shifts is
+attributable to the network, which is the entire point.
+
+### The fusing hazard — why every model is loaded with `fuse=False`
+
+`ultralytics.nn.tasks.BaseModel.fuse()` contains:
+
+```python
+if isinstance(m, Detect) and getattr(m, "end2end", False):
+    m.fuse()          # -> Detect.fuse(): self.cv2 = self.cv3 = None
+```
+
+Fusing a model whose head is in end-to-end mode **deletes the one-to-many branch in place**
+(verified on the real checkpoint: 114 BatchNorms → 0, `cv2`/`cv3` → `None`). `AutoBackend`
+defaults to `fuse=True`, and both `BasePredictor.setup_model` and `BaseValidator.__call__`
+route through it — so *the default Ultralytics inference path destroys the core ablation*.
+Reusing one `YOLO()` handle for `val(end2end=True)` then `val(end2end=False)` evaluates a
+mutilated model or crashes in `Detect._inference`.
+
+`shifteq/modelzoo.py` calls `load_checkpoint(..., fuse=False)` directly and re-checks after
+every head switch. Gate A additionally *probes* that fusing really does destroy the branch
+on the installed version, so a future release changing this shows up in the manifest.
+
+### Hypotheses the data refuted
+
+Four plausible explanations for a 0.033 AP residual against Ultralytics, each tested:
+
+| hypothesis | script | verdict |
+|---|---|---|
+| `max_det` treats the heads differently | `01b` | **wrong** — both +0.6 AP over 50→500, curves parallel, saturating at 300 |
+| exported TensorRT grouped top-k ≠ PyTorch top-k | `01c` | **wrong** — byte-identical selections, 0/64 images differ |
+| Conv+BN folding | `02c` | **wrong** — +0.001 AP |
+| TF32 / cudnn.benchmark | `02e` | **wrong** — −0.001 / 0.000 |
+
+What remains (`02d`): both heads end in a **discrete selection** (NMS, or the one-to-one
+head's top-k), and a discrete selection flips under a 1e-8 score difference — the survivor
+can be a materially different box. 88% of boxes match exactly, 12% differ, median delta
+exactly 0 and no systematic bias. It is a bounded, quantified property of discrete
+aggregation, not a geometry error, and **all shift comparisons are made within our own
+byte-deterministic pipeline**, so no reported ΔAP or AP(δ) is affected.
+
+### Two operational findings worth keeping
+
+* **TF32 must stay off.** It barely moves AP (−0.001) but moves *individual detection
+  confidences by up to 0.137* — plausibly larger than what a one-pixel shift does to a
+  single detection. It is on by default on every Ampere-class GPU.
+  `utils.set_deterministic` disables it.
+* **`torchvision` must be imported before NMS runs.** `ultralytics/utils/nms.py` selects its
+  kernel with `use_torchvision = ... and "torchvision" in sys.modules`, and Ultralytics does
+  that import inside `AutoBackend.warmup` — which we bypass. Without it the one-to-many path
+  silently runs a *different* NMS: 21× slower (350 s vs 16 s per shift over COCO val) and
+  materially different output (743k vs 660k detections). `infer.py` imports it explicitly.
+
+### Compute budget
+
+| stage | work | note |
+|---|---|---|
+| preprocess cache | N image decodes, once | 1.2 GB per 1000 images. Measured worth on this box: **1.01x** (`09`) -- decode hides behind the GPU. Kept for reproducibility, not speed |
+| oracle inference | `4 × N` forwards | 62 s on full val |
+| **oracle greedy** | **`2 × 1 × 4 × N` AP evaluations** | **the real bottleneck; ~22 min/head** |
+| sweep inference | `256 × N` forwards at step 2 | ~14 min per head at N=1000 |
+| sweep evaluation | 256 COCO evaluations | free — overlapped with inference |
+
+Reduce oracle cost with `--subset` before reducing `K` or the grid; `N` enters linearly and
+is the only knob that does not change the metric's definition.
 
 ---
 
@@ -527,292 +813,6 @@ rather than dropped. From M=3 onward the gap reappears at close to its full-vali
 magnitude, on a completely different image sample.
 
 ![max-shift ladder](results/figures/ladder.png)
-
----
-
-## Method
-
-### Two metric families, never mixed
-
-| | `shifteq/oracle.py` | `shifteq/sweep.py` |
-|---|---|---|
-| quantity | ΔAP = AP_best − AP_worst | AP(δ) curve |
-| shift choice | **per image, adversarial** (greedy Alg. 1) | **the same δ for every image** |
-| what it answers | how far can shift-selection move AP at all | what a translation costs in deployment |
-| comparable to | Manfredi & Wang Tab. 1, at M=1 only | nothing published; ours |
-| cost driver | `K × (M+1)² × N` AP evaluations | `grid × N` forward passes |
-
-`AP_best` is the maximum AP achievable by choosing the best shift for **each image
-independently**, found greedily because AP couples images through one global score ranking.
-It is an *oracle envelope*, systematically wider than `max(AP(δ)) − min(AP(δ))` over the
-uniform grid — measured here at ~3×. Quoting one as the other, in either direction, is
-wrong; `06_report.py` puts them in separate tables on purpose.
-
-**The selection objective is AP50, not AP.** Easy to miss and it changes the numbers.
-Manfredi & Wang Sec. 3.1: *"In practice, we use AP50 as the metric"*. The greedy search
-optimises AP50; the AP (0.50:0.95) column of their Table 1 is AP read off *at the
-assignment AP50 chose*. They confirm the side-effect in Sec. 4.1 — ΔAP50 grows
-monotonically with max shift but ΔAP does not, *"a result of our evaluation metric, that
-uses AP50 to find best and worst shifts"*. `--objective` defaults to `AP50`.
-
-### Making 20,000 full-dataset AP evaluations affordable
-
-At M=1 on COCO val the oracle needs `1 × 4 × 5000 = 20,000` full-dataset AP evaluations per
-direction. That, not the GPU time, is the bottleneck. Three things make it cost minutes:
-
-* IoU matching is per-image independent, so it is computed **once per (image, shift)** and
-  cached as bitmasks over the 10 IoU thresholds;
-* all shifts go into **one globally sorted union table**, so selecting an assignment is a
-  boolean mask over data already in rank order — no re-sorting per candidate;
-* accumulation runs on numpy or, by default when a GPU is present, on torch.
-
-Measured: **32.3 ms per full-dataset AP evaluation** (union table of 2.65M rows) → 11 min
-per direction, ~22 min for AP_best + AP_worst per head. Inference for the whole M=1 grid is
-62 s. `shifteq/pipeline.py` additionally overlaps GPU inference for δ_{k+1} with pooled CPU
-evaluation of δ_k during the sweep, so the CPU half is free.
-
-### Shift protocol
-
-Manfredi & Wang do not crop to shift — they embed each image in a **larger** canvas at
-offset δ (Fig. 2), following Azulay & Weiss. That matters for detection: cropping a few
-pixels can remove part of an object and change the ground truth, confounding "the detector
-moved its answer" with "the input lost information". We keep that and adapt it to a YOLO
-pipeline:
-
-```
-original image --[Ultralytics val letterbox]--> 640 x 640
-               --[paste at (dy, dx)]----------> 672 x 672    (canvas = ceil((640+M)/32)*32)
-```
-
-* the canvas is stride-aligned and **constant across shifts**, so the anchor grid never
-  changes shape — only the content moves;
-* two embedding modes, both strictly no-crop: `grow` (frozen default — letterbox to 640,
-  canvas 672; full resolution, but a non-validated input size, costing +0.03/+0.07 AP) and
-  `fit` (letterbox to 609, canvas 640; the validated input size at ~5% less resolution).
-  Select with `--embed-mode`; see [`PROTOCOL.md` §1](PROTOCOL.md) for the deviations from
-  Manfredi & Wang, including gray-114 fill rather than black;
-* shifts are `(dy, dx)` in `[0, M]²`, non-negative because the canvas grows toward the
-  bottom-right;
-* predictions are de-shifted (`−δ`, then the inverse letterbox) and evaluated against
-  **unmodified** COCO ground truth, so the cache is directly comparable across shifts;
-* `--pad-value` sets both the letterbox border and the canvas border together (`114`
-  default, `0`, any constant, `-1` replicate, `-2` reflect). Constant padding is an implicit
-  absolute-position cue (Kayhan & van Gemert, CVPR'20); replicate/reflect remove it while
-  keeping the geometry identical.
-
-### Metric definitions we chose
-
-Flicker and jitter are **not** standardised; these are choices. They are pinned in
-[`PROTOCOL.md` §6–7](PROTOCOL.md), including the exact greedy matching algorithm, crowd
-handling, and tie-breaks. Summary:
-
-* `detected(g, δ)` — a de-shifted prediction exists with the same class, IoU ≥ 0.5, and
-  score ≥ τ. τ is a real knob: at COCO's evaluation threshold of 0.001 almost nothing ever
-  drops out, so flicker measured there is meaningless. Default τ = 0.25, the Ultralytics
-  predict-time default.
-* **flicker rate** — fraction of GT whose `detected(g, ·)` is not constant over the grid.
-* **dropout rate** — fraction of GT detected at δ=(0,0) that are missed at ≥ 1 shift. The
-  "your baseline number was partly luck" statistic.
-* **class flip rate** — fraction of GT assigned more than one distinct class across shifts
-  by their best class-agnostic match.
-* **box jitter** — per-GT standard deviation of each de-shifted coordinate, averaged over
-  the 4 coordinates, in original-image pixels; also normalised by `sqrt(GT area)`.
-
-A perfectly shift-equivariant detector scores 0 on all four.
-
-**Stability Index** (`shifteq/stabindex.py`). Flicker is binary and jitter is a bare
-standard deviation; neither says *what kind* of instability a detector has. We adapt the SI
-of *Towards Stable 3D Object Detection* (arXiv:2407.04305 — the source of the "stability
-decorrelates from accuracy" claim) to 2-D shift pairs:
-
-```
-SI_c = max(0, 1 - |c1 - c2| / (c^0.99 - c^0.01))      confidence
-SI_l = IoU(B1_loc, B2_loc)                            centre moves, extent pinned to GT
-SI_e = IoU(B1_ext, B2_ext)                            extent moves, centre pinned to GT
-SI2D = SI_c * (SI_l + SI_e) / 2                       (their SI_h has no 2-D analogue)
-```
-
-with SI = 0 when an object is predicted in one member of the pair but not the other — a
-missed detection is maximal instability, not missing data. The decomposition is the point:
-`SI_c` says the *score* moved (aggregation), `SI_l`/`SI_e` say the *box* moved (backbone
-sampling, shared by both heads). `--si-mode ref` pairs every δ against δ=(0,0);
-`--si-mode adjacent` pairs neighbouring grid points.
-
-**Shift test-time augmentation** (`shifteq/tta.py`). Manfredi & Wang Sec. 5.4 turn shift
-variance into a feature: run the shifts, map predictions back, merge with NMS. That lands
-awkwardly on a one-to-one detector, and the awkwardness is the finding — merging across
-shifts *is* a duplicate-removal problem. We merge three ways (`nms`, `topk`, `vote`) and
-report all of them; the headline is `nms` vs `topk` on identical detections.
-
----
-
-## Phase 0 — de-risk (run before anything else)
-
-### Gate A — reproduce the published numbers
-
-Runs **Ultralytics' own validator**, not ours, for both heads. The published protocol turns
-out to be `rect=True`, which `cfg/default.yaml` leaves ambiguous (it sets `rect: False` but
-comments "rectangular batching for val when mode='val'"):
-
-| protocol | e2e | nms |
-|---|---|---|
-| square (`rect=False`) | 40.255 | 40.867 |
-| **`rect=True`** (gate) | **40.044** (published 40.1, −0.06) | **40.813** (published 40.9, −0.09) |
-
-Gate: both within `--tol` (default 0.1 AP). **Passed.**
-
-The square number is what our harness must match, because the canvas protocol needs a fixed
-input size and per-batch shapes would make it depend on batch composition. Note the
-square-vs-rect gap is **4× larger for the one-to-one head** (+0.21) than the one-to-many
-head (+0.05): the heads already disagree about what gray padding costs them, before any
-shift is applied.
-
-#### Gate A for the cross-check models
-
-No model's shift behaviour is quoted before it reproduces its published COCO AP — otherwise
-"this detector is unstable" could just be a loading bug. `make phase0-cross`:
-
-| model | head | ours | published | Δ | gate |
-|---|---|---|---|---|---|
-| YOLOv8-N | nms | 37.391 | 37.3 | **+0.091** | pass |
-| YOLO11-N | nms | 39.421 | 39.5 | **−0.079** | pass |
-| YOLOv10-N | e2e | 38.477 | 38.5 | **−0.023** | pass |
-| YOLOv10-N | nms | 39.464 | — | — | no published target |
-| RT-DETR-L | e2e | 52.766 | 53.0 | **−0.234** | see below |
-
-**YOLOv10-N's one-to-many branch has no published number.** It ships in the checkpoint but
-was never tabulated, so it is measured without a target. Its accuracy head gap is
-**+0.987 AP** (nms − e2e), close to yolo26n's **+0.77** — the same trade, on a different
-checkpoint.
-
-**RT-DETR-L misses the 0.1 tolerance, and the reason is upstream.** Its published 53.0 is the
-RT-DETR-R50 number from the original paper's *PaddlePaddle* evaluation, which Ultralytics
-quotes for their PyTorch port rather than re-measuring. The 52.766 above is Ultralytics'
-own validator on Ultralytics' own checkpoint, and a protocol ladder
-(`results/phase0/rtdetr_protocol_probe.json`) shows the residual is not a threshold
-artefact — the model emits exactly 300 queries, all scoring above 0.001, so AP is
-**identical** at `conf` ∈ {0.001, 0} and `max_det` ∈ {300, 1000}:
-
-| conf | max_det | AP |
-|---|---|---|
-| 0.001 | 300 | 52.766 |
-| 0 | 300 | 52.766 |
-| 0 | 1000 | 52.766 |
-| 0.001 | 100 | 52.584 |
-
-Its gate tolerance is therefore declared as 0.3 in `PROTOCOL.md §10.3` rather than loosened
-silently, and **no absolute-AP claim is made from that arm** — it contributes only to the
-universality question, which is about the *shape* of AP(δ), not its level. A preprocessing
-mistake would cost whole AP points, not a quarter of one.
-
-#### One upstream bug had to be fixed to run RT-DETR at all
-
-`RTDETRDecoder` caches its anchor grid and validity mask as **plain attributes**, keyed on
-the feature-map shapes. `nn.Module.to()` moves parameters and registered buffers, not plain
-attributes — and Ultralytics runs a CPU forward at 640×640 inside
-`get_flops_with_torch_profiler` while printing the model summary, *before* the model reaches
-the GPU. The cache is populated on CPU with exactly the shapes validation will use, the
-regeneration branch is skipped, and the first CUDA forward dies with `Expected all tensors
-to be on the same device`. `shifteq.modelzoo.fix_rtdetr_anchor_cache` sets `dynamic`, which
-rebuilds the grid per forward from `feats.device`. It is a cache-invalidation flag, not a
-numerics change: the regenerated tensors are the ones the cache was supposed to hold.
-Reproduced and verified on ultralytics 8.4.120 / torch 2.13.
-
-### Gate B — the harness is a faithful, invertible wrapper
-
-| gate | assertion | result |
-|---|---|---|
-| B1 preprocessing identity | our tensor == Ultralytics' dataloader tensor, byte-for-byte, plus `ratio_pad` | 0 mismatches on **all 5000 images** |
-| B2 de-shift round-trip | `deshift(shift(b, δ), δ) == b` for all δ, both preprocessing families | max error 6e-5 px |
-| B2b map equivariance | a canvas box translated by exactly δ de-shifts to the same box | max error 6e-6 px |
-| B3 determinism | two runs of the same δ produce byte-identical detections | pass |
-| B4 evaluator agreement | our COCO AP == faster-coco-eval on the same predictions | **1.1e-16** |
-| B5 no fusion | BatchNorms intact, both branches present, weights unchanged across head switch | 114 BN, fingerprint stable |
-| B6 canvas effect | measured, **not** asserted — see below | +0.029 e2e / +0.068 nms (full val) |
-
-### Read this before quoting "δ=(0,0) reproduces the baseline bit-exactly"
-
-True for exactly one configuration, false for the one you will actually run:
-
-* **`max_shift = 0`** → canvas == imgsz == 640. The harness degenerates to the stock
-  Ultralytics val pipeline, so δ=(0,0) *is* the baseline and equality is bit-exact. That is
-  gates B1/B3/B4 and they are real assertions.
-* **`max_shift = 31`** → canvas == 672. δ=(0,0) places the image at the top-left of a
-  672×672 canvas with a 32-px gray border. That is **not** the baseline input: boundary
-  convolutions see different context and the anchor grid is 84×84 instead of 80×80.
-  Demanding bit-exactness there is demanding that padding have no effect — which is
-  precisely the hypothesis the padding ablation exists to test. B6 therefore *measures*
-  `AP(canvas=672, δ=0) − AP(canvas=640)` and reports it as a result. **On the full
-  validation set that cost is +0.029 AP (e2e) and +0.068 (nms)** — the widely-quoted
-  "+0.225" is the e2e value from B6's 500-image probe and did not survive the full set,
-  which is what a 500-image AP estimate should be expected to do.
-
-What is bit-exact in **every** configuration is the geometry: preprocessing (B1) and the
-de-shift inverse map (B2/B2b). With those pinned, any residual difference between shifts is
-attributable to the network, which is the entire point.
-
-### The fusing hazard — why every model is loaded with `fuse=False`
-
-`ultralytics.nn.tasks.BaseModel.fuse()` contains:
-
-```python
-if isinstance(m, Detect) and getattr(m, "end2end", False):
-    m.fuse()          # -> Detect.fuse(): self.cv2 = self.cv3 = None
-```
-
-Fusing a model whose head is in end-to-end mode **deletes the one-to-many branch in place**
-(verified on the real checkpoint: 114 BatchNorms → 0, `cv2`/`cv3` → `None`). `AutoBackend`
-defaults to `fuse=True`, and both `BasePredictor.setup_model` and `BaseValidator.__call__`
-route through it — so *the default Ultralytics inference path destroys the core ablation*.
-Reusing one `YOLO()` handle for `val(end2end=True)` then `val(end2end=False)` evaluates a
-mutilated model or crashes in `Detect._inference`.
-
-`shifteq/modelzoo.py` calls `load_checkpoint(..., fuse=False)` directly and re-checks after
-every head switch. Gate A additionally *probes* that fusing really does destroy the branch
-on the installed version, so a future release changing this shows up in the manifest.
-
-### Hypotheses the data refuted
-
-Four plausible explanations for a 0.033 AP residual against Ultralytics, each tested:
-
-| hypothesis | script | verdict |
-|---|---|---|
-| `max_det` treats the heads differently | `01b` | **wrong** — both +0.6 AP over 50→500, curves parallel, saturating at 300 |
-| exported TensorRT grouped top-k ≠ PyTorch top-k | `01c` | **wrong** — byte-identical selections, 0/64 images differ |
-| Conv+BN folding | `02c` | **wrong** — +0.001 AP |
-| TF32 / cudnn.benchmark | `02e` | **wrong** — −0.001 / 0.000 |
-
-What remains (`02d`): both heads end in a **discrete selection** (NMS, or the one-to-one
-head's top-k), and a discrete selection flips under a 1e-8 score difference — the survivor
-can be a materially different box. 88% of boxes match exactly, 12% differ, median delta
-exactly 0 and no systematic bias. It is a bounded, quantified property of discrete
-aggregation, not a geometry error, and **all shift comparisons are made within our own
-byte-deterministic pipeline**, so no reported ΔAP or AP(δ) is affected.
-
-### Two operational findings worth keeping
-
-* **TF32 must stay off.** It barely moves AP (−0.001) but moves *individual detection
-  confidences by up to 0.137* — plausibly larger than what a one-pixel shift does to a
-  single detection. It is on by default on every Ampere-class GPU.
-  `utils.set_deterministic` disables it.
-* **`torchvision` must be imported before NMS runs.** `ultralytics/utils/nms.py` selects its
-  kernel with `use_torchvision = ... and "torchvision" in sys.modules`, and Ultralytics does
-  that import inside `AutoBackend.warmup` — which we bypass. Without it the one-to-many path
-  silently runs a *different* NMS: 21× slower (350 s vs 16 s per shift over COCO val) and
-  materially different output (743k vs 660k detections). `infer.py` imports it explicitly.
-
-### Compute budget
-
-| stage | work | note |
-|---|---|---|
-| preprocess cache | N image decodes, once | 1.2 GB per 1000 images. Measured worth on this box: **1.01x** (`09`) -- decode hides behind the GPU. Kept for reproducibility, not speed |
-| oracle inference | `4 × N` forwards | 62 s on full val |
-| **oracle greedy** | **`2 × 1 × 4 × N` AP evaluations** | **the real bottleneck; ~22 min/head** |
-| sweep inference | `256 × N` forwards at step 2 | ~14 min per head at N=1000 |
-| sweep evaluation | 256 COCO evaluations | free — overlapped with inference |
-
-Reduce oracle cost with `--subset` before reducing `K` or the grid; `N` enters linearly and
-is the only knob that does not change the metric's definition.
 
 ---
 
