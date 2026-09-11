@@ -206,15 +206,9 @@ either version 3 of the License, or (at your option) any later version. The full
 It is distributed in the hope that it will be useful, but **without any warranty**; without
 even the implied warranty of merchantability or fitness for a particular purpose.
 
-**Why AGPL rather than something permissive.** This repo imports
+This repo imports
 [Ultralytics](https://github.com/ultralytics/ultralytics), which is AGPL-3.0, in four core
 modules and most of `scripts/`. AGPL is copyleft: anything distributed on top of it must
 carry the same licence, so a permissive licence here would be granting rights we do not have
 to give. Every other dependency — PyTorch, NumPy, OpenCV, matplotlib — is permissive and does
 not constrain the choice.
-
-In practice: use it, modify it, redistribute it. If you redistribute it, or run it as a
-network service, you must make your source available under the same terms.
-
-No model weights are redistributed here. COCO is fetched by `make setup` under its own terms,
-and the pretrained checkpoints are downloaded from their publishers at run time.
